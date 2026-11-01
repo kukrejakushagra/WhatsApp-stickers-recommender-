@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import com.kukreja.stickersearch.ui.kds.KdsFastScroller
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,8 +69,11 @@ internal fun LibraryScreen(state: UiState, onOpen: (StickerRow) -> Unit, goToSet
     }
     val counts = remember(all) { Filter.entries.associateWith { f -> all.count { matches(f, it) } } }
     val items = remember(all, filter) { all.filter { matches(filter, it) } }
+    val gridState = rememberLazyGridState()
+    val monthFmt = remember { java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.getDefault()) }
+    Box(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
-        GridCells.Fixed(3), Modifier.fillMaxSize(),
+        GridCells.Fixed(3), Modifier.fillMaxSize(), state = gridState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = BottomClearance),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -107,5 +112,12 @@ internal fun LibraryScreen(state: UiState, onOpen: (StickerRow) -> Unit, goToSet
                 Thumb(s.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (s.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
             }
         }
+    }
+    // Item 0 is the header; items 1.. are stickers, newest first, so the bubble shows their month.
+    KdsFastScroller(
+        gridState, itemCount = items.size + 1, modifier = Modifier.align(Alignment.TopEnd),
+        topInset = 96.dp, bottomInset = BottomClearance,
+        label = { i -> items.getOrNull(i - 1)?.newest?.takeIf { it > 0 }?.let { monthFmt.format(java.util.Date(it)) } },
+    )
     }
 }

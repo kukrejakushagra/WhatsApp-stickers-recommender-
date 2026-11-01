@@ -49,10 +49,19 @@ import kotlinx.coroutines.delay
 @Composable
 fun KdsToastHost(message: String?, onShown: () -> Unit, modifier: Modifier = Modifier) {
     var visible by remember { mutableStateOf<String?>(null) }
+    var shownAt by remember { mutableStateOf(0L) }
+    // Take the new message, then mark it consumed. Consuming sets [message] back to null, which restarts
+    // this effect, so the hide timer must not live here (it used to, and got cancelled: toasts never went away).
     LaunchedEffect(message) {
         if (message != null) {
             visible = message
+            shownAt = System.nanoTime()
             onShown()
+        }
+    }
+    // Hides 2.6 s after the latest message; a newer message restarts the timer.
+    LaunchedEffect(shownAt) {
+        if (shownAt != 0L) {
             delay(2600)
             visible = null
         }

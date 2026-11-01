@@ -442,12 +442,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun deleteIfOurs(uri: Uri) {
+        if (uri.scheme == "file") uri.path?.let { p -> if (p.startsWith(ctx.cacheDir.absolutePath)) File(p).delete() }
+    }
+
     fun removeAttachment(uri: Uri) = _state.update { s ->
+        deleteIfOurs(uri)
         val left = s.assist.attachments - uri
         s.copy(assist = if (left.isEmpty()) AssistState() else s.assist.copy(attachments = left, done = false))
     }
 
-    fun clearAssist() = _state.update { it.copy(assist = AssistState()) }
+    fun clearAssist() = _state.update { s -> s.assist.attachments.forEach(::deleteIfOurs); s.copy(assist = AssistState()) }
 
     fun consumeOpenSearch() = _state.update { it.copy(openSearch = false) }
 
@@ -742,18 +747,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Images shared from WhatsApp, the gallery or a screenshot go to "Help me reply" in Search. */
+    /**
+     * A screenshot (or any image) shared into the app becomes the attachment for the next search.
+     * It's copied into the app's cache at once: the sharing app's read permission is temporary.
+     */
     fun handleShareIntent(intent: Intent?) {
         if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return
-        val uris = when (intent.action) {
+        val streams = when (intent.action) {
             Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java))
             else -> intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
         }
+        // Some screenshot tools only fill in ClipData.
+        val clip = intent.clipData?.let { c -> (0 until c.itemCount).mapNotNull { c.getItemAt(it).uri } }.orEmpty()
+        val uris = (streams + clip).distinct().take(com.kukreja.stickersearch.ml.GemmaAnnotator.MAX_IMAGES)
         events.add("share_in", mapOf("type" to intent.type, "count" to uris.size))
-        if (uris.isEmpty()) return
-        attach(uris)
-        _state.update { it.copy(openSearch = true) }
-        toast(if (uris.size == 1) "Image added. Tap Suggest stickers." else "${uris.size} images added. Tap Suggest stickers.")
+        if (uris.isEmpty()) return toast("Nothing to add: share an image or screenshot.")
+        viewModelScope.launch(Dispatchers.IO) {
+            val copies = uris.mapNotNull { u ->
+                runCatching {
+                    val dir = File(ctx.cacheDir, "shared").apply { mkdirs() }
+                    val f = File(dir, "shot-${System.nanoTime()}.img")
+                    ctx.contentResolver.openInputStream(u)?.use { input -> f.outputStream().use { input.copyTo(it) } } ?: return@runCatching null
+                    Uri.fromFile(f)
+                }.getOrNull()
+            }
+            if (copies.isEmpty()) return@launch toast("The shared image couldn't be opened. Try sharing it again.")
+            // A fresh share starts a fresh question: it replaces earlier attachments and results.
+            clearAssist()
+            attach(copies)
+            _state.update { it.copy(openSearch = true) }
+            toast(if (copies.size == 1) "Screenshot added. Add a few words if you like, then tap Suggest stickers."
+                else "${copies.size} images added. Add a few words if you like, then tap Suggest stickers.")
+        }
     }
 
     fun consumeMessage() = _state.update { it.copy(message = null) }
