@@ -247,6 +247,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.Default) { engine.warmUp() }
         // If the app died inside Gemma (describing or suggesting replies), record it now.
         viewModelScope.launch(Dispatchers.IO) {
+            com.kukreja.stickersearch.ml.DescribeGuard.takeUnfinishedEmbed(ctx)?.let { id ->
+                events.add("e5_crash", mapOf("sticker" to id))
+            }
             com.kukreja.stickersearch.ml.DescribeGuard.takeUnfinished(ctx)?.let { u ->
                 if (u.stickerId > 0) {
                     db.ai().annotationFailed(u.stickerId, "The app closed while describing this on the ${u.backend}: ${u.why}", System.currentTimeMillis())

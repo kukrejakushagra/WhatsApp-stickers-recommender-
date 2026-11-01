@@ -44,12 +44,12 @@ object Vectors {
         FloatArray(b.size / 4).also { ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(it) }
 }
 
-private fun ortSession(env: OrtEnvironment, file: File): OrtSession {
+private fun ortSession(env: OrtEnvironment, file: File, xnnpack: Boolean = true): OrtSession {
     val opts = OrtSession.SessionOptions().apply {
         setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         setIntraOpNumThreads(4)
         // XNNPACK speeds up quantised CPU kernels on ARM; fall back to the default CPU provider.
-        runCatching { addXnnpack(mapOf("intra_op_num_threads" to "4")) }
+        if (xnnpack) runCatching { addXnnpack(mapOf("intra_op_num_threads" to "4")) }
     }
     return env.createSession(file.absolutePath, opts)
 }
@@ -57,7 +57,9 @@ private fun ortSession(env: OrtEnvironment, file: File): OrtSession {
 /** multilingual-e5-small: text → 384-d vector. Prefix "query: " or "passage: " as the model expects. */
 class TextEmbedder(context: Context, modelFile: File) : AutoCloseable {
     private val env = OrtEnvironment.getEnvironment()
-    private val session = ortSession(env, modelFile)
+    // Variable-length input: no XNNPACK here (suspected of the native crashes seen on device);
+    // the default CPU provider runs this small model in milliseconds.
+    private val session = ortSession(env, modelFile, xnnpack = false)
     private val tokenizer = XlmrTokenizer(context.assets.open("tokenizers/e5.model").use { SentencePiece.load(it) })
 
     fun query(text: String) = embed("query: $text")
@@ -65,7 +67,8 @@ class TextEmbedder(context: Context, modelFile: File) : AutoCloseable {
 
     @Synchronized
     fun embed(text: String): FloatArray {
-        val ids = tokenizer.encode(text, maxLen = 256)
+        // Ids outside the vocabulary would read past the embedding table in native code.
+        val ids = tokenizer.encode(text, maxLen = 256).map { it.coerceIn(0, VOCAB - 1) }
         val n = ids.size
         val shape = longArrayOf(1, n.toLong())
         val idT = OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(n) { ids[it].toLong() }), shape)
@@ -86,6 +89,8 @@ class TextEmbedder(context: Context, modelFile: File) : AutoCloseable {
     }
 
     override fun close() = session.close()
+
+    private companion object { const val VOCAB = 250_002 }
 }
 
 /** SigLIP2 base/16-224 image tower: sticker image → 768-d vector in the shared image–text space. */

@@ -135,20 +135,34 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
 
     private suspend fun textPass() {
         val embedder = runCatching { TextEmbedder(applicationContext, models.file(ModelKind.E5)) }.getOrNull() ?: return
+        val ctx = applicationContext
+        DescribeGuard.takeUnfinishedEmbed(ctx)
+        val skip = DescribeGuard.embedSkipped(ctx)
         embedder.use { e ->
             phase = "Meaning search"
             done = 0
             total = db.ai().countPendingTextEmbedding()
+            val tried = HashSet<Long>()
             while (!isStopped) {
-                val batch = db.ai().pendingTextEmbedding(128)
+                // Skipped stickers stay without a text vector (still found by looks and keywords), so page past them.
+                val batch = db.ai().pendingTextEmbedding(128 + tried.size).filter { it.id !in skip && it.id !in tried }
                 if (batch.isEmpty()) break
                 for (s in batch) {
+                    tried += s.id
                     val a = repo.effective(s.id) ?: continue
-                    repo.saveTextEmbedding(s.id, e.passage(a.searchText()), E5_NAME)
+                    embedGuarded(e, s.id, a.searchText())
                     tick()
                 }
             }
         }
+    }
+
+    /** One e5 call inside the crash guard, so a sticker that crashes it is skipped next time. */
+    private suspend fun embedGuarded(e: TextEmbedder, id: Long, text: String) {
+        DescribeGuard.beginEmbed(applicationContext, id)
+        val v = runCatching { e.passage(text) }.getOrNull()
+        DescribeGuard.endEmbed(applicationContext)
+        if (v != null) repo.saveTextEmbedding(id, v, E5_NAME)
     }
 
     private suspend fun annotatePass() {
@@ -200,7 +214,7 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
                         db.ai().annotationFailed(s.id, why, System.currentTimeMillis())
                     } else {
                         repo.saveModel(s.id, a, GemmaAnnotator.MODEL_NAME, GemmaAnnotator.PROMPT_VERSION)
-                        text?.let { t -> repo.saveTextEmbedding(s.id, t.passage((repo.effective(s.id) ?: a).searchText()), E5_NAME) }
+                        text?.let { t -> if (s.id !in DescribeGuard.embedSkipped(ctx)) embedGuarded(t, s.id, (repo.effective(s.id) ?: a).searchText()) }
                     }
                     tick()
                     status(applicationContext).edit().putLong(KEY_LAST_ANNOTATION_MS, r.getOrNull()?.millis ?: 0L).apply()

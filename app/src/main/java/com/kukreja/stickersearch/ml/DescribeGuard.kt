@@ -48,6 +48,29 @@ object DescribeGuard {
         return u
     }
 
+    // ---- the same guard for the e5 text-vector step (ONNX, also native) ----
+
+    fun beginEmbed(ctx: Context, stickerId: Long) {
+        prefs(ctx).edit().putLong("embed_id", stickerId).putLong("embed_at", System.currentTimeMillis()).putBoolean("embed_open", true).commit()
+    }
+
+    fun endEmbed(ctx: Context) { prefs(ctx).edit().putBoolean("embed_open", false).commit() }
+
+    /** A text-vector call that never finished: that sticker is skipped from now on. Returns its id. */
+    fun takeUnfinishedEmbed(ctx: Context): Long? {
+        val p = prefs(ctx)
+        if (!p.getBoolean("embed_open", false)) return null
+        val id = p.getLong("embed_id", -1)
+        val at = p.getLong("embed_at", 0)
+        p.edit().putBoolean("embed_open", false)
+            .putStringSet("embed_skip", (p.getStringSet("embed_skip", emptySet()).orEmpty() + id.toString()))
+            .putString("last", "text vectors (e5): ${exitReason(ctx, at)}").putLong("last_at", at).commit()
+        return id
+    }
+
+    fun embedSkipped(ctx: Context): Set<Long> =
+        prefs(ctx).getStringSet("embed_skip", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+
     fun streak(ctx: Context) = prefs(ctx).getInt("streak", 0)
     fun paused(ctx: Context) = streak(ctx) >= PAUSE_AFTER
     /** "Start now" clears a pause: the user wants another go. */
@@ -71,7 +94,8 @@ object DescribeGuard {
             else -> "the app closed (reason ${info.reason})"
         }
         val mb = info.pss.takeIf { it > 0 }?.let { ", using %,d MB".format(it / 1024) } ?: ""
-        return what + mb + (info.description?.takeIf { it.isNotBlank() }?.let { " · ${it.take(120)}" } ?: "")
+        val where = nativeLibs(info).takeIf { it.isNotEmpty() }?.let { " in ${it.take(3).joinToString(", ")}" } ?: ""
+        return what + mb + where + (info.description?.takeIf { it.isNotBlank() && it != "crash" }?.let { " · ${it.take(120)}" } ?: "")
     }
 
     /** The last few process exits, for the diagnostics report. */
@@ -79,7 +103,22 @@ object DescribeGuard {
         val am = ctx.getSystemService(ActivityManager::class.java) ?: return emptyList()
         return runCatching { am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5) }.getOrDefault(emptyList()).map {
             "${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(it.timestamp))} " +
-                "reason=${it.reason} status=${it.status} pssMB=${it.pss / 1024} rssMB=${it.rss / 1024} ${it.description.orEmpty().take(120)}"
+                "reason=${it.reason} status=${it.status} pssMB=${it.pss / 1024} rssMB=${it.rss / 1024} ${it.description.orEmpty().take(120)}" +
+                nativeLibs(it).takeIf { l -> l.isNotEmpty() }?.let { l -> " libs=${l.joinToString(",")}" }.orEmpty()
         }
+    }
+
+    /**
+     * For a native crash Android keeps the tombstone (a protobuf). Its readable strings name the
+     * native libraries in the crashing thread's backtrace, which says which engine crashed
+     * (MediaPipe's LLM library, ONNX Runtime, ...). System libraries are left out.
+     */
+    private fun nativeLibs(info: ApplicationExitInfo): List<String> {
+        if (info.reason != ApplicationExitInfo.REASON_CRASH_NATIVE) return emptyList()
+        val bytes = runCatching { info.traceInputStream?.use { it.readBytes() } }.getOrNull() ?: return emptyList()
+        val text = String(bytes, Charsets.ISO_8859_1)
+        return Regex("""[A-Za-z0-9_\-.]+\.so""").findAll(text).map { it.value }
+            .filterNot { it.startsWith("libc.") || it.startsWith("libart") || it.startsWith("libbase") || it == "linker64.so" }
+            .distinct().take(8).toList()
     }
 }
