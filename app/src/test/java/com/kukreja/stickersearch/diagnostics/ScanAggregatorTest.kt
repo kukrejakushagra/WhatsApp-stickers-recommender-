@@ -23,18 +23,23 @@ class ScanAggregatorTest {
             pf(SourceId.SAF_TREE, "a/1-copy.webp", "h1"), // duplicate within a source
             pf(SourceId.FILE_SYSTEM, "a/1.webp", "h1"), // same file via another source
             pf(SourceId.FILE_SYSTEM, "a/2.webp", "h2", animFmt),
-            pf(SourceId.MEDIA_STORE, "x/3.webp", null, null, err = "read failed"),
+            pf(SourceId.SHARE_IN, "x/3.webp", null, null, err = "read failed"),
+            // Encrypted backup: hashed but unrecognised. Must not count as a sticker.
+            pf(SourceId.SHARE_IN, "x/4.crypt15", "h4", FormatInfo(StickerFormat.UNKNOWN, false, 0, 0, 0)),
+            pf(SourceId.SAF_TREE, "a/5.was", "h5", FormatInfo(StickerFormat.LOTTIE_WAS, true, 0, 0, 0)),
         )
         val s = ScanAggregator.aggregate(processed)
-        assertEquals(2, s.uniqueCount)
-        assertEquals(1, s.animatedCount)
+        assertEquals(3, s.uniqueCount)
+        assertEquals(2, s.animatedCount)
+        assertEquals(1, s.lottieCount)
+        assertEquals(0, s.animatedDecodeFailures)
         assertEquals(1, s.perSource.getValue(SourceId.SAF_TREE).duplicateFiles)
-        assertEquals(1, s.perSource.getValue(SourceId.SAF_TREE).uniqueHashes)
+        assertEquals(2, s.perSource.getValue(SourceId.SAF_TREE).uniqueHashes)
         assertEquals(2, s.perSource.getValue(SourceId.FILE_SYSTEM).uniqueHashes)
-        assertEquals(1, s.perSource.getValue(SourceId.MEDIA_STORE).failures)
-        assertEquals(mapOf(SourceId.FILE_SYSTEM to 1), s.exclusiveToSource)
+        assertEquals(2, s.perSource.getValue(SourceId.SHARE_IN).failures)
+        assertEquals(mapOf(SourceId.FILE_SYSTEM to 1, SourceId.SAF_TREE to 1), s.exclusiveToSource)
         assertEquals(3, s.unique.first { it.sha256 == "h1" }.occurrences.size)
-        assertEquals(1, s.failures.size)
+        assertEquals(2, s.failures.size)
     }
 
     @Test fun newestFirstOrdering() {

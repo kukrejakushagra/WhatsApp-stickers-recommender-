@@ -1,12 +1,10 @@
 package com.kukreja.stickersearch.discovery
 
-import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
-import android.provider.MediaStore
 import com.kukreja.stickersearch.model.DirStats
 import com.kukreja.stickersearch.model.DiscoveredFile
 import com.kukreja.stickersearch.model.SourceId
@@ -89,8 +87,12 @@ class SafTreeSource(private val context: Context, private val treeUri: Uri?) : S
                         val mime = c.getString(2)
                         val size = if (c.isNull(3)) 0L else c.getLong(3)
                         val modified = if (c.isNull(4)) 0L else c.getLong(4)
-                        if (mime == Document.MIME_TYPE_DIR) { stack.addLast(docId); continue }
                         val path = docIdToPath(docId)
+                        if (mime == Document.MIME_TYPE_DIR) {
+                            // Only walk towards sticker folders; skip Images, Video, Backups, etc.
+                            if (PathRules.shouldDescend(path)) stack.addLast(docId)
+                            continue
+                        }
                         PathRules.record(inventory, path, size)
                         // The user may pick the sticker folder itself, whose own name has "Sticker" in it.
                         if (PathRules.isStickerCandidate(path)) {
@@ -112,49 +114,8 @@ class SafTreeSource(private val context: Context, private val treeUri: Uri?) : S
     companion object {
         /** Initial location for the SAF picker, so the user does not have to navigate. */
         fun initialStickerFolderUri(): Uri = DocumentsContract.buildDocumentUri(
-            "com.android.externalstorage.documents", "primary:${PathRules.WHATSAPP_STICKER_RELATIVE}",
+            "com.android.externalstorage.documents", "primary:${PathRules.WHATSAPP_MEDIA_RELATIVE}",
         )
-    }
-}
-
-/** Option C: MediaStore. Expected to return little if WhatsApp marks the folder with .nomedia. */
-class MediaStoreSource(private val context: Context, private val hasPermission: Boolean) : StickerSource {
-    override val id = SourceId.MEDIA_STORE
-
-    override suspend fun scan(): SourceResult {
-        if (!hasPermission) return SourceResult(SourceProbe(id, false, "READ_MEDIA_IMAGES not granted"), emptyList())
-        val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
-        val projection = arrayOf(
-            MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.RELATIVE_PATH,
-            MediaStore.Files.FileColumns.DISPLAY_NAME, MediaStore.Files.FileColumns.SIZE,
-            MediaStore.Files.FileColumns.DATE_MODIFIED, MediaStore.Files.FileColumns.MIME_TYPE,
-        )
-        val files = mutableListOf<DiscoveredFile>()
-        val notes = mutableListOf<String>()
-        try {
-            val waTotal = context.contentResolver.query(
-                collection, arrayOf(MediaStore.Files.FileColumns._ID),
-                "${MediaStore.Files.FileColumns.RELATIVE_PATH} LIKE ?", arrayOf("%com.whatsapp%"), null,
-            )?.use { it.count } ?: -1
-            notes += "MediaStore rows under any com.whatsapp path: $waTotal"
-            context.contentResolver.query(
-                collection, projection,
-                "${MediaStore.Files.FileColumns.RELATIVE_PATH} LIKE ?", arrayOf("%Sticker%"), null,
-            )?.use { c ->
-                while (c.moveToNext()) {
-                    val rowId = c.getLong(0)
-                    val rel = c.getString(1) ?: ""
-                    val name = c.getString(2) ?: ""
-                    files += DiscoveredFile(
-                        id, ContentUris.withAppendedId(collection, rowId).toString(),
-                        rel + name, name, c.getLong(3), c.getLong(4) * 1000, c.getString(5),
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            return SourceResult(SourceProbe(id, false, "${e.javaClass.simpleName}: ${e.message}", notes = notes), files)
-        }
-        return SourceResult(SourceProbe(id, true, null, listOf("MediaStore external"), notes), files)
     }
 }
 

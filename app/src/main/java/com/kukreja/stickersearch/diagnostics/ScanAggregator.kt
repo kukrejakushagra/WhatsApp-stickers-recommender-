@@ -29,15 +29,22 @@ data class ScanSummary(
     val animatedCount get() = unique.count { it.format.isAnimated }
     val formatBreakdown: Map<StickerFormat, Int>
         get() = unique.groupingBy { it.format.format }.eachCount().toSortedMap()
-    val animatedDecodeFailures get() = unique.count { it.format.isAnimated && it.animatedDecodeOk == false }
+    /** Animated stickers the platform decoder could not play; Lottie (.was) is rendered separately. */
+    val animatedDecodeFailures get() = unique.count {
+        it.format.isAnimated && it.format.format != StickerFormat.LOTTIE_WAS && it.animatedDecodeOk == false
+    }
+    val lottieCount get() = unique.count { it.format.format == StickerFormat.LOTTIE_WAS }
 }
 
 /** Deduplicates processed files by SHA-256 and summarises per source. Pure logic: unit-tested. */
 object ScanAggregator {
 
+    /** A file counts as a sticker when it was read and its format is recognised. */
+    fun isSticker(p: ProcessedFile) = p.sha256 != null && p.format != null && p.format.format != StickerFormat.UNKNOWN
+
     fun aggregate(processed: List<ProcessedFile>): ScanSummary {
-        val ok = processed.filter { it.sha256 != null && it.format != null }
-        val failures = processed.filter { it.sha256 == null || it.format == null || it.error != null }
+        val ok = processed.filter(::isSticker)
+        val failures = processed.filter { !isSticker(it) || it.error != null }
 
         val unique = ok.groupBy { it.sha256!! }.map { (sha, group) ->
             val first = group.first()
@@ -52,7 +59,7 @@ object ScanAggregator {
         }.sortedByDescending { s -> s.occurrences.maxOf { it.lastModifiedMs } }
 
         val perSource = processed.groupBy { it.file.source }.mapValues { (source, group) ->
-            val good = group.filter { it.sha256 != null && it.format != null }
+            val good = group.filter(::isSticker)
             val hashes = good.mapTo(hashSetOf()) { it.sha256!! }
             val byHash = good.distinctBy { it.sha256 }
             val times = group.map { it.file.lastModifiedMs }.filter { it > 0 }
@@ -64,7 +71,7 @@ object ScanAggregator {
                 totalBytes = group.sumOf { it.file.sizeBytes },
                 animated = byHash.count { it.format!!.isAnimated },
                 formats = byHash.groupingBy { it.format!!.format }.eachCount(),
-                failures = group.count { it.sha256 == null || it.format == null || it.error != null },
+                failures = group.count { !isSticker(it) || it.error != null },
                 oldestMs = times.minOrNull(),
                 newestMs = times.maxOrNull(),
             )

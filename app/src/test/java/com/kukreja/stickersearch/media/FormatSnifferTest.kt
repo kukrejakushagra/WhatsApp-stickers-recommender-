@@ -136,7 +136,7 @@ class FormatSnifferTest {
     // ---- others ----
 
     @Test fun zipAndLottieAndGarbage() {
-        assertEquals(StickerFormat.ZIP_ARCHIVE, FormatSniffer.sniff(byteArrayOf(0x50, 0x4B, 0x03, 0x04, 0, 0)).format)
+        assertEquals(StickerFormat.LOTTIE_WAS, FormatSniffer.sniff(byteArrayOf(0x50, 0x4B, 0x03, 0x04, 0, 0)).format)
         assertEquals(StickerFormat.LOTTIE_JSON, FormatSniffer.sniff("""{"v":"5.7.4","fr":30,"ip":0}""".toByteArray()).format)
         assertEquals(StickerFormat.UNKNOWN, FormatSniffer.sniff(byteArrayOf(1, 2, 3)).format)
         assertEquals(StickerFormat.UNKNOWN, FormatSniffer.sniff(ByteArray(0)).format)

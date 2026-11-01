@@ -15,6 +15,21 @@ class PathRulesTest {
         assertFalse(PathRules.isStickerCandidate("Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Stickers/.nomedia"))
         assertFalse(PathRules.isStickerCandidate("Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/IMG-1.jpg"))
         assertFalse(PathRules.isStickerCandidate("WhatsApp Stickers/clip.mp4"))
+        // Seen on device: a second sticker folder, and the encrypted backup tree that must be skipped.
+        assertTrue(PathRules.isStickerCandidate("Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Backup Excluded Stickers/x.webp"))
+        assertFalse(PathRules.isStickerCandidate("Android/media/com.whatsapp/WhatsApp/Backups/Stickers/x.webp"))
+        assertFalse(PathRules.isStickerCandidate("Android/media/com.whatsapp/WhatsApp/Backups/Stickers/x.webp.crypt15"))
+    }
+
+    @Test fun descendOnlyTowardsStickers() {
+        val media = "Android/media/com.whatsapp/WhatsApp/Media"
+        assertTrue(PathRules.shouldDescend(media))
+        assertTrue(PathRules.shouldDescend("$media/WhatsApp Stickers"))
+        assertTrue(PathRules.shouldDescend("$media/WhatsApp Backup Excluded Stickers"))
+        assertFalse(PathRules.shouldDescend("$media/WhatsApp Images"))
+        assertFalse(PathRules.shouldDescend("$media/WhatsApp Video/Sent"))
+        assertFalse(PathRules.shouldDescend("Android/media/com.whatsapp/WhatsApp/Backups/Stickers"))
+        assertTrue(PathRules.shouldDescend("Android/media/com.whatsapp/WhatsApp"))
     }
 
     @Test fun inventoryTracksNoMedia() {

@@ -2,13 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Option A (sideload-only experiment): direct read of Android/media/com.whatsapp. -->
+    <!-- Optional diagnostic (sideload only): direct read of Android/media/com.whatsapp. -->
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
-    <!-- Option C: MediaStore probe. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <!-- No INTERNET permission: nothing can leave the device from this build. -->
 
     <queries>

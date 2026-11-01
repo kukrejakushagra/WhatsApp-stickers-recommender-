@@ -17,7 +17,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import com.kukreja.stickersearch.model.StickerFormat
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.ZipInputStream
 
 data class ScanProgress(val phase: String, val done: Int, val total: Int)
 
@@ -73,6 +75,13 @@ class ScanEngine(private val context: Context, private val thumbnailer: Thumbnai
         }
         val sha = Hasher.sha256(bytes)
         val format = FormatSniffer.sniff(bytes)
+        if (format.format == StickerFormat.LOTTIE_WAS) {
+            // Not decodable by ImageDecoder; rendered with Lottie from M2. Record the archive layout.
+            return ProcessedFile(f, sha, format, null, null, null, zipEntries(bytes))
+        }
+        if (format.format == StickerFormat.UNKNOWN) {
+            return ProcessedFile(f, sha, format, null, "unrecognised format")
+        }
         var error: String? = null
         val thumb = try { thumbnailer.ensureThumbnail(sha, bytes) } catch (e: Exception) {
             error = "thumbnail failed: ${e.javaClass.simpleName}: ${e.message}"; null
@@ -84,6 +93,15 @@ class ScanEngine(private val context: Context, private val thumbnailer: Thumbnai
         } else null
         return ProcessedFile(f, sha, format, thumb, error, animOk)
     }
+
+    private fun zipEntries(bytes: ByteArray): List<String> = runCatching {
+        ZipInputStream(bytes.inputStream()).use { zip ->
+            generateSequence { zip.nextEntry }.take(20).map { e ->
+                val size = zip.readBytes().size // entry sizes are often absent from local headers
+                "${e.name} ($size B)"
+            }.toList()
+        }
+    }.getOrElse { listOf("unreadable zip: ${it.message}") }
 
     companion object {
         const val MAX_BYTES = 10L * 1024 * 1024

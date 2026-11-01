@@ -1,6 +1,5 @@
 package com.kukreja.stickersearch.ui
 
-import android.Manifest
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -9,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.core.net.toUri
+import com.kukreja.stickersearch.ui.kds.theme.KdsTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (savedInstanceState == null) vm.handleShareIntent(intent)
         setContent {
-            AppTheme {
+            KdsTheme {
                 MainScreen(
                     vm = vm,
                     openAllFilesSettings = {
@@ -27,10 +27,6 @@ class MainActivity : ComponentActivity() {
                             Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:$packageName".toUri()),
                         )
                     },
-                    mediaPermissions = arrayOf(
-                        Manifest.permission.READ_MEDIA_IMAGES,
-                        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-                    ),
                 )
             }
         }

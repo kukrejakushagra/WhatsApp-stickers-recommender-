@@ -1,13 +1,11 @@
 package com.kukreja.stickersearch.ui
 
-import android.Manifest
 import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
@@ -18,7 +16,6 @@ import com.kukreja.stickersearch.diagnostics.ScanEngine
 import com.kukreja.stickersearch.diagnostics.ScanOutcome
 import com.kukreja.stickersearch.diagnostics.ScanProgress
 import com.kukreja.stickersearch.discovery.FileSystemSource
-import com.kukreja.stickersearch.discovery.MediaStoreSource
 import com.kukreja.stickersearch.discovery.SafTreeSource
 import com.kukreja.stickersearch.discovery.SharedInSource
 import com.kukreja.stickersearch.media.Thumbnailer
@@ -36,13 +33,12 @@ data class Permissions(
     val safTree: Uri?,
     val safHeld: Boolean,
     val allFiles: Boolean,
-    val mediaImages: Boolean,
-    val mediaPartial: Boolean,
 ) {
+    val safTreeId: String? get() = safTree?.let { android.provider.DocumentsContract.getTreeDocumentId(it) }
+
     fun asMap() = mapOf(
         "safTreePicked" to (safTree != null), "safPermissionHeld" to safHeld,
-        "manageExternalStorage" to allFiles, "readMediaImages" to mediaImages,
-        "readMediaVisualUserSelectedOnly" to mediaPartial,
+        "manageExternalStorage" to allFiles,
     )
 }
 
@@ -73,10 +69,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun readPermissions(): Permissions {
         val tree = prefs.getString(KEY_TREE, null)?.let(Uri::parse)
         val held = tree != null && ctx.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }
-        val images = ctx.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-        val partial = !images && ctx.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) ==
-            PackageManager.PERMISSION_GRANTED
-        return Permissions(tree, held, Environment.isExternalStorageManager(), images, partial)
+        return Permissions(tree, held, Environment.isExternalStorageManager())
     }
 
     fun onTreePicked(uri: Uri?) {
@@ -95,7 +88,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val sources = listOf(
                 SafTreeSource(ctx, p.safTree),
                 FileSystemSource(),
-                MediaStoreSource(ctx, p.mediaImages || p.mediaPartial),
                 SharedInSource(importDir),
             )
             val outcome = runCatching {
@@ -105,8 +97,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 it.copy(
                     scanning = false, progress = null,
                     outcome = outcome.getOrNull() ?: it.outcome,
-                    message = outcome.exceptionOrNull()?.let { e -> "Scan failed: ${e.message}" }
-                        ?: "Scan finished: ${outcome.getOrNull()?.summary?.uniqueCount} unique stickers",
+                    message = outcome.exceptionOrNull()?.let { e -> "Scan stopped: ${e.message}. Run it again." }
+                        ?: "Scan finished, %,d unique stickers".format(outcome.getOrNull()?.summary?.uniqueCount ?: 0),
                 )
             }
         }
@@ -118,7 +110,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun copyReport() {
         val cm = ctx.getSystemService(ClipboardManager::class.java)
         cm.setPrimaryClip(ClipData.newPlainText("Sticker diagnostics", reportJson()))
-        toast("Report copied. Paste it into the Claude chat.")
+        toast("Report copied")
     }
 
     fun shareReport(activity: Context) {
@@ -137,7 +129,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val intent = withContext(Dispatchers.IO) { sharer.prepare(sticker, mode) }
             intent.onSuccess {
                 try { activity.startActivity(it) } catch (e: ActivityNotFoundException) {
-                    toast("WhatsApp is not installed or does not accept this file type")
+                    toast("WhatsApp didn't open. Check it is installed, then try again.")
                 }
             }.onFailure { toast(it.message ?: "Send failed") }
             refreshPermissions()
@@ -148,7 +140,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return
         viewModelScope.launch {
             val n = withContext(Dispatchers.IO) { sharer.importShared(intent, importDir) }
-            toast("Imported $n file(s) from share. Run a scan to include them.")
+            toast(if (n == 1) "Imported 1 sticker. Run a scan to include it." else "Imported $n stickers. Run a scan to include them.")
             refreshPermissions()
         }
     }
@@ -160,7 +152,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             File(ctx.filesDir, "thumbs").deleteRecursively()
             ctx.cacheDir.deleteRecursively()
             File(ctx.filesDir, "thumbs").mkdirs()
-            _state.update { it.copy(outcome = null, eventCount = 0, message = "All local data deleted") }
+            _state.update { it.copy(outcome = null, eventCount = 0, message = "Scan data deleted") }
         }
     }
 

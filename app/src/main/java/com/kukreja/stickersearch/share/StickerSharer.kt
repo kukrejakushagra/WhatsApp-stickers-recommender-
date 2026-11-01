@@ -118,7 +118,7 @@ class StickerSharer(private val context: Context, private val events: EventLog) 
             StickerFormat.GIF -> "gif"
             StickerFormat.PNG, StickerFormat.APNG -> "png"
             StickerFormat.JPEG -> "jpg"
-            StickerFormat.ZIP_ARCHIVE -> "zip"
+            StickerFormat.LOTTIE_WAS -> "was"
             StickerFormat.LOTTIE_JSON -> "json"
             StickerFormat.UNKNOWN -> "bin"
         }

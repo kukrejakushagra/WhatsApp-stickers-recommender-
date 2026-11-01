@@ -4,7 +4,6 @@ package com.kukreja.stickersearch.model
 enum class SourceId(val label: String) {
     SAF_TREE("SAF folder (Option B)"),
     FILE_SYSTEM("All-files access (Option A)"),
-    MEDIA_STORE("MediaStore (Option C)"),
     SHARE_IN("Shared into app (Option D/E)"),
 }
 
@@ -26,7 +25,7 @@ enum class StickerFormat {
     PNG,
     APNG,
     JPEG,
-    ZIP_ARCHIVE, // e.g. a Lottie-based ".was" sticker
+    LOTTIE_WAS, // WhatsApp ".was": a zip holding a Lottie animation
     LOTTIE_JSON,
     UNKNOWN,
 }
@@ -72,6 +71,8 @@ data class ProcessedFile(
     val error: String?,
     /** For animated files: whether the platform decoder produced an AnimatedImageDrawable. */
     val animatedDecodeOk: Boolean? = null,
+    /** For .was archives: entry names and sizes, to learn their layout. */
+    val zipEntries: List<String>? = null,
 )
 
 /** One unique sticker (by SHA-256) and every place it was found. */

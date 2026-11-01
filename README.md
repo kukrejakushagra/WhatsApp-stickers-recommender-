@@ -13,10 +13,11 @@ A native Android app (Kotlin + Jetpack Compose) that will index the WhatsApp sti
 
 | Probe | How | Permission |
 |---|---|---|
-| A. All files access | Walks `Android/media/com.whatsapp`, `com.whatsapp.w4b` and legacy `/sdcard/WhatsApp`; records that `Android/data/com.whatsapp` is blocked | "All files access" (special app access) |
-| B. Folder picker (SAF) | Persistent tree on `Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Stickers` | None; you pick the folder once |
-| C. MediaStore | Queries the media index for sticker paths | Photos and media |
-| D. Share-in | Receives stickers or images shared to the app | None |
+| Folder picker (SAF, primary) | Persistent tree on `Android/media/com.whatsapp/WhatsApp/Media`; reads `WhatsApp Stickers` and `WhatsApp Backup Excluded Stickers`, skips everything else | None; you pick the folder once |
+| All files access (diagnostic) | Walks `Android/media/com.whatsapp` to find sticker folders the picker misses; records that `Android/data/com.whatsapp` is blocked | "All files access" (special app access) |
+| Share-in | Receives stickers or images shared to the app | None |
+
+MediaStore was tested in the first device run and dropped: it only indexes WhatsApp's encrypted `Backups/Stickers` copies.
 
 For every file found, the app:
 1. sniffs the real format (static or animated WebP, GIF, PNG/APNG, zip/Lottie);
@@ -52,9 +53,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## Device testing (M1 GO/NO-GO)
 
 1. Open **Sticker Search**. On the **Setup** tab:
-   1. **Pick folder.** The picker opens at `WhatsApp Stickers`. Tap **Use this folder**, then **Allow**. If it doesn't open there, navigate to `Android › media › com.whatsapp › WhatsApp › Media › WhatsApp Stickers`, and note in the report whether you could.
-   2. **All files access.** Tap Open settings, enable it, and come back.
-   3. **Photos and media.** Tap Request and choose **Allow all**.
+   1. **Pick folder.** The picker opens at `Media`. Tap **Use this folder**, then **Allow**. If it doesn't open there, navigate to `Android › media › com.whatsapp › WhatsApp › Media`.
+   2. **All files access** (optional). Tap Open settings, enable it, and come back.
 2. Tap **Run scan**. Wait for it to finish; 1,000+ files take a minute or two.
 3. On the **Stickers** tab:
    1. Check the unique count.
@@ -73,4 +73,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **All files access is broad.** It's only used for this diagnostic, and would not be allowed on Google Play for this use. The folder picker is the long-term path.
 - **No persistence yet.** Results live in memory until the app closes; thumbnails are cached on disk. The Room database arrives in M2.
 - **Static grid.** Grid thumbnails show the first frame; animation plays in the detail view.
+- **Lottie `.was` stickers** are counted but not rendered yet (planned for M2).
+- **Sharing sends a photo.** WhatsApp receives an `ACTION_SEND` WebP as a photo, not a sticker; real sticker sending is planned through WhatsApp's sticker-pack provider (M5).
+- **Liquid-glass panels are frosted, not refracting.** Compose has no backdrop blur without an extra library.
+
+The Geist font is bundled under the SIL Open Font License (`third_party/geist/OFL.txt`).
 - **Android 16 only.** The checklist for older versions is in the Project doc.

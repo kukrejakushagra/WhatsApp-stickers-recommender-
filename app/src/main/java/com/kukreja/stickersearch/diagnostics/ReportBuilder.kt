@@ -44,6 +44,12 @@ object ReportBuilder {
             put("uniqueStickers", s.uniqueCount)
             put("uniqueAnimated", s.animatedCount)
             put("animatedDecodeFailures", s.animatedDecodeFailures)
+            put("lottieWas", s.lottieCount)
+            put("waEntries", JSONArray().apply {
+                outcome.processed.filter { it.zipEntries != null }.distinctBy { it.sha256 }.take(3).forEach {
+                    put(JSONObject().put("file", it.file.name).put("entries", JSONArray(it.zipEntries)))
+                }
+            })
             put("formats", JSONObject(s.formatBreakdown.mapKeys { it.key.name } as Map<*, *>))
             put("exclusiveToSource", JSONObject(s.exclusiveToSource.mapKeys { it.key.name } as Map<*, *>))
             put("sources", JSONArray().apply {

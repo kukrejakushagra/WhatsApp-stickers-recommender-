@@ -22,7 +22,7 @@ object FormatSniffer {
             bytes.size >= 3 && u8(bytes, 0) == 0xFF && u8(bytes, 1) == 0xD8 && u8(bytes, 2) == 0xFF ->
                 FormatInfo(StickerFormat.JPEG, false, 1, 0, 0)
             startsWith(bytes, byteArrayOf(0x50, 0x4B, 0x03, 0x04)) ->
-                FormatInfo(StickerFormat.ZIP_ARCHIVE, true, 0, 0, 0)
+                FormatInfo(StickerFormat.LOTTIE_WAS, true, 0, 0, 0)
             looksLikeLottieJson(bytes) -> FormatInfo(StickerFormat.LOTTIE_JSON, true, 0, 0, 0)
             else -> unknown()
         }
