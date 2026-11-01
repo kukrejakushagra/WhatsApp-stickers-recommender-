@@ -9,6 +9,21 @@ The device holds about 5,027 unique stickers, not 1,000. At 15–30 s per VLM an
 1. **Pass 1 (first night, about 25–40 min):** an image-text embedding for every sticker (multilingual SigLIP2, about 0.3–0.5 s each on the X9c). Visual natural-language search works on everything right away, using keyframes for animated stickers.
 2. **Pass 2 (following nights, newest first):** Gemma 3n annotations (description, intents, tags, Hindi/Hinglish phrases). These replace or augment the pass-1 ranking as they arrive.
 
+## As built (0.3.0)
+
+| Role | Model | Runtime | File |
+|---|---|---|---|
+| Understanding | Gemma 3n E2B it int4 | MediaPipe LLM Inference 0.10.29 (GPU, CPU fallback) | `gemma-3n-E2B-it-int4.task`, ~3.1 GB, gated |
+| Meaning vectors | multilingual-e5-small int8, 384-d, mean-pooled | ONNX Runtime 1.29 + XNNPACK | ~118 MB |
+| Looks | SigLIP2 base/16-224 int8, image and text towers, 768-d | ONNX Runtime | ~95 MB + ~283 MB |
+
+- **Tokenizers** are implemented in Kotlin: SentencePiece Unigram for XLM-R/e5 and BPE with byte fallback for Gemma/SigLIP2. They match the reference library ID-for-ID on English, Hindi, Hinglish, emoji and NFKC cases (unit tests).
+- **Checks run off-device in Python** with the same int8 files:
+  - SigLIP2 ranks the right caption first for synthetic images, in English and Hindi.
+  - e5 ranks the right annotation first for most of the user's example queries.
+  - Embeddings don't handle negation, so the parser removes negated words and the ranker penalises matching labels.
+- **Animated stickers** are shown to Gemma as a 2×2 contact sheet of keyframes (one image pass). The model is told the frames are in time order and asked to describe the motion.
+
 ## What has to be produced per sticker
 
 - A description.

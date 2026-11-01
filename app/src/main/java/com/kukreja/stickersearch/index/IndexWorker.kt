@@ -104,6 +104,8 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                 failed = counts[IngestOutcome.FAILED.ordinal],
             ),
         )
+        // New stickers feed the AI passes; annotation itself waits for a charger unless started by hand.
+        AiWorker.enqueue(ctx, manual = false)
         return Result.success()
     }
 

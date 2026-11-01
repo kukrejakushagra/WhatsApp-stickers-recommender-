@@ -10,11 +10,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- No INTERNET permission: nothing can leave the device from this build. -->
+    <!-- Lets the user exempt the app from battery optimisation so overnight AI runs aren't cut short. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- No INTERNET permission: nothing can leave the device. ML libraries request it; it's removed here. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
 
     <queries>
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
+        <provider android:authorities="com.whatsapp.provider.sticker_whitelist_check" />
     </queries>
 
     <application
@@ -49,6 +53,14 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="mediaProcessing"
             tools:node="merge" />
+
+        <!-- WhatsApp's third-party sticker-pack contract: only WhatsApp holds com.whatsapp.sticker.READ. -->
+        <provider
+            android:name=".share.StickerContentProvider"
+            android:authorities="${applicationId}.stickercontentprovider"
+            android:enabled="true"
+            android:exported="true"
+            android:readPermission="com.whatsapp.sticker.READ" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

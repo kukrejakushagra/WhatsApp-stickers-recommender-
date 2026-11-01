@@ -24,11 +24,11 @@ object IndexNotification {
         }
     }
 
-    private fun build(ctx: Context, done: Int, total: Int): Notification {
+    private fun build(ctx: Context, done: Int, total: Int, title: String): Notification {
         channel(ctx)
         return Notification.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_kds_search)
-            .setContentTitle("Indexing stickers")
+            .setContentTitle(title)
             .setContentText(if (total > 0) "%,d of %,d".format(done, total) else "Listing files")
             .setProgress(total, done, total == 0)
             .setOngoing(true)
@@ -36,10 +36,10 @@ object IndexNotification {
             .build()
     }
 
-    fun info(ctx: Context, done: Int, total: Int) =
-        ForegroundInfo(ID, build(ctx, done, total), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+    fun info(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers") =
+        ForegroundInfo(ID, build(ctx, done, total, title), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
 
-    fun update(ctx: Context, done: Int, total: Int) {
-        runCatching { ctx.getSystemService(NotificationManager::class.java).notify(ID, build(ctx, done, total)) }
+    fun update(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers") {
+        runCatching { ctx.getSystemService(NotificationManager::class.java).notify(ID, build(ctx, done, total, title)) }
     }
 }

@@ -18,6 +18,7 @@ abstract class StickerDatabase : RoomDatabase() {
     abstract fun files(): FileDao
     abstract fun frames(): FrameDao
     abstract fun runs(): ScanRunDao
+    abstract fun ai(): AiDao
 
     companion object {
         @Volatile private var instance: StickerDatabase? = null

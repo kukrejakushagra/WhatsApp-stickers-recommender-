@@ -14,8 +14,12 @@ android {
         // Android 16 only for now; see docs/04-roadmap.md "Android version support".
         minSdk = 36
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.1-m2"
+        versionCode = 5
+        versionName = "0.3.0"
+        ndk {
+            // The phone is arm64; other ABIs would only add ~100 MB of native ML libraries.
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -30,11 +34,39 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.all { test ->
+            // Optional: -PspModelsDir=<dir> enables tokenizer tests against the real model files.
+            providers.gradleProperty("spModelsDir").orNull?.let { test.systemProperty("spModelsDir", it) }
+        }
+    }
     lint {
         // Sideload-only personal build: MANAGE_EXTERNAL_STORAGE is intentional.
         disable += "ScopedStorage"
     }
 }
+
+// Tokenizer files (small, Apache-2.0/MIT) are fetched at build time instead of being committed.
+val tokenizerAssets = layout.buildDirectory.dir("generated/tokenizers")
+val fetchTokenizers by tasks.registering {
+    val out = tokenizerAssets
+    outputs.dir(out)
+    doLast {
+        val files = mapOf(
+            "tokenizers/e5.model" to "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/sentencepiece.bpe.model",
+            "tokenizers/siglip2.model" to "https://huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX/resolve/main/tokenizer.model",
+        )
+        files.forEach { (rel, url) ->
+            val f = out.get().file(rel).asFile
+            if (!f.exists() || f.length() == 0L) {
+                f.parentFile.mkdirs()
+                uri(url).toURL().openStream().use { input -> f.outputStream().use { output -> input.copyTo(output) } }
+            }
+        }
+    }
+}
+android.sourceSets.getByName("main").assets.srcDir(tokenizerAssets)
+tasks.named("preBuild") { dependsOn(fetchTokenizers) }
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
@@ -61,5 +93,9 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.work.runtime.ktx)
     implementation(libs.lottie)
+    implementation(libs.onnxruntime.android)
+    implementation(libs.mediapipe.genai)
+    implementation(libs.mediapipe.core)
     testImplementation(libs.junit)
+    testImplementation(libs.org.json) // real org.json for JVM tests (Android ships its own)
 }
