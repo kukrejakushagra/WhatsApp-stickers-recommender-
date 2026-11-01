@@ -83,9 +83,29 @@ class SearchEngine(private val context: Context) {
     suspend fun search(query: String): Result = lock.withLock {
         val started = System.currentTimeMillis()
         loadModels()
+        val sig = signals(query)
+        val hits = Ranker.fuse(sig.lists, docById, sig.avoid, sig.matched, System.currentTimeMillis())
+        Result(hits, System.currentTimeMillis() - started, sig.usedMeaning, sig.usedLooks)
+    }
+
+    /** Several queries (e.g. from the reply assistant) fused into one ranking. */
+    suspend fun searchMany(queries: List<String>, extraAvoid: List<String>, limit: Int = 30): List<Ranker.Hit> = lock.withLock {
+        loadModels()
+        val all = queries.filter { it.isNotBlank() }.map { signals(it) }
+        val matched = HashMap<Long, List<String>>()
+        all.forEach { s -> s.matched.forEach { (k, v) -> matched[k] = (matched[k].orEmpty() + v).distinct() } }
+        val avoid = (all.flatMap { it.avoid } + extraAvoid.map { it.lowercase() }).distinct()
+        Ranker.fuse(all.flatMap { it.lists }, docById, avoid, matched, System.currentTimeMillis(), limit)
+    }
+
+    private class Signals(
+        val lists: List<Pair<Double, List<Long>>>, val avoid: List<String>, val matched: Map<Long, List<String>>,
+        val usedMeaning: Boolean, val usedLooks: Boolean,
+    )
+
+    private fun signals(query: String): Signals {
         val q = QueryParser.parse(query)
         val lists = mutableListOf<Pair<Double, List<Long>>>()
-
         val tq = if (textDim > 0) text?.query(q.expanded) else null
         if (tq != null && tq.size == textDim) {
             val s = FloatArray(ids.size) { i -> if (hasText[i]) Vectors.dot(tq, textVecs, i * textDim) else Float.NEGATIVE_INFINITY }
@@ -99,9 +119,24 @@ class SearchEngine(private val context: Context) {
         }
         val kw = Ranker.keywordScores(q.terms, docs)
         if (kw.isNotEmpty()) lists += 0.9 to kw.entries.sortedByDescending { it.value.first }.take(200).map { it.key }
+        return Signals(lists, q.avoid, kw.mapValues { it.value.second }, tq != null, iq != null)
+    }
 
-        val hits = Ranker.fuse(lists, docById, q.avoid, kw.mapValues { it.value.second }, System.currentTimeMillis())
-        Result(hits, System.currentTimeMillis() - started, tq != null, iq != null)
+    /**
+     * Library stickers that appear in an image: [crops] are image vectors of the whole image and of
+     * overlapping squares at several scales. A sticker matches when one crop is nearly identical to it.
+     */
+    suspend fun matchCrops(crops: List<FloatArray>): List<Pair<Long, Float>> = lock.withLock {
+        if (imgDim == 0 || crops.isEmpty()) return@withLock emptyList()
+        val best = FloatArray(ids.size) { Float.NEGATIVE_INFINITY }
+        for (c in crops) {
+            if (c.size != imgDim) continue
+            for (i in ids.indices) if (hasImg[i]) {
+                val v = Vectors.dot(c, imgVecs, i * imgDim)
+                if (v > best[i]) best[i] = v
+            }
+        }
+        ImageMatch.pick(ids, best)
     }
 
     fun close() {

@@ -37,10 +37,28 @@ class GemmaAnnotator private constructor(private val llm: LlmInference, val back
         return Result(Annotation.parse(raw), raw, System.currentTimeMillis() - started)
     }
 
+    /**
+     * Reads chat screenshots (and/or images) plus what the user typed, and plans a sticker reply:
+     * what's going on, and short search queries for the right reaction.
+     */
+    fun planReply(images: List<Bitmap>, userText: String): Pair<ReplyPlan?, String> {
+        val opts = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+            .setTopK(20).setTemperature(0.3f)
+            .setGraphOptions(GraphOptions.builder().setEnableVisionModality(images.isNotEmpty()).build())
+            .build()
+        val raw = LlmInferenceSession.createFromOptions(llm, opts).use { s ->
+            s.addQueryChunk(replyPrompt(images.size, userText))
+            images.take(MAX_IMAGES).forEach { s.addImage(BitmapImageBuilder(fit(it)).build()) }
+            s.generateResponse()
+        }
+        return ReplyPlan.parse(raw) to raw
+    }
+
     override fun close() = llm.close()
 
     companion object {
         const val PROMPT_VERSION = 1
+        const val MAX_IMAGES = 3
         const val MODEL_NAME = "gemma-3n-e2b-it-int4"
         private const val SIDE = 512
 
@@ -56,7 +74,7 @@ class GemmaAnnotator private constructor(private val llm: LlmInference, val back
                 LlmInference.LlmInferenceOptions.builder()
                     .setModelPath(model.absolutePath)
                     .setMaxTokens(1280)
-                    .setMaxNumImages(1)
+                    .setMaxNumImages(MAX_IMAGES)
                     .setPreferredBackend(b)
                     .build(),
             )
@@ -87,6 +105,28 @@ class GemmaAnnotator private constructor(private val llm: LlmInference, val back
             append("\"hindi\": 1-3 such phrases in Devanagari,\n")
             append("\"emoji\": one emoji that fits,\n")
             append("\"confidence\": a number from 0 to 1 for how sure you are of the meaning.")
+        }
+
+        fun replyPrompt(imageCount: Int, userText: String): String = buildString {
+            append("You help someone pick a WhatsApp sticker to send. ")
+            if (imageCount > 0) {
+                append("You are given $imageCount image(s); they are usually screenshots of a chat, where the user's own messages ")
+                append("are on the right and the other person's on the left. Read the latest messages carefully.\n")
+            }
+            if (userText.isNotBlank()) append("The user says: \"${userText.trim()}\"\n")
+            append("Work out what is going on and how the user would want to react. Reply with one JSON object and nothing else:\n")
+            append("\"reading\": one short sentence on what was said and the tone of the reply the user needs,\n")
+            append("\"queries\": 2-4 short descriptions of ideal reply stickers, by emotion and intent (e.g. \"playful eye roll, not impressed\", \"laughing hard at a joke\"),\n")
+            append("\"avoid\": 0-3 single words for moods that would be wrong here (e.g. \"angry\"),\n")
+            append("\"seen\": short descriptions of any stickers visible in the images, or [].")
+        }
+
+        /** Keeps aspect ratio; long screenshots stay readable at up to 1024 px on the long side. */
+        private fun fit(src: Bitmap): Bitmap {
+            val maxSide = maxOf(src.width, src.height)
+            if (maxSide <= 1024) return src
+            val s = 1024f / maxSide
+            return Bitmap.createScaledBitmap(src, (src.width * s).toInt(), (src.height * s).toInt(), true)
         }
 
         private fun onWhite(src: Bitmap): Bitmap {

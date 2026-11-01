@@ -20,6 +20,7 @@ import com.kukreja.stickersearch.data.AnnotationRepository
 import com.kukreja.stickersearch.data.StickerDatabase
 import com.kukreja.stickersearch.data.StickerEntity
 import com.kukreja.stickersearch.ml.GemmaAnnotator
+import com.kukreja.stickersearch.ml.GemmaHolder
 import com.kukreja.stickersearch.ml.ImageEmbedder
 import com.kukreja.stickersearch.ml.ModelKind
 import com.kukreja.stickersearch.ml.ModelStore
@@ -107,12 +108,13 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
     }
 
     private suspend fun annotatePass() {
-        val gemma = runCatching { GemmaAnnotator.open(applicationContext, models.file(ModelKind.GEMMA)) }
+        // Shared with the reply assistant, so the two never load separate 3 GB copies.
+        val backend = runCatching { GemmaHolder.use(applicationContext) { it.backend } }
             .getOrElse {
                 status(applicationContext).edit().putString(KEY_GEMMA_ERROR, "${it.javaClass.simpleName}: ${it.message}").apply()
                 return
             }
-        status(applicationContext).edit().remove(KEY_GEMMA_ERROR).putString(KEY_GEMMA_BACKEND, gemma.backend).apply()
+        status(applicationContext).edit().remove(KEY_GEMMA_ERROR).putString(KEY_GEMMA_BACKEND, backend).apply()
         val text = if (models.has(ModelKind.E5)) runCatching { TextEmbedder(applicationContext, models.file(ModelKind.E5)) }.getOrNull() else null
         try {
             phase = "Understanding stickers"
@@ -128,7 +130,7 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
                         db.ai().annotationFailed(s.id, "no image to show the model", System.currentTimeMillis())
                         continue
                     }
-                    val r = runCatching { gemma.annotate(frames, s.isAnimated, s.durationMs) }
+                    val r = runCatching { GemmaHolder.use(applicationContext) { g -> g.annotate(frames, s.isAnimated, s.durationMs) } }
                     frames.forEach { it.recycle() }
                     val a = r.getOrNull()?.annotation
                     if (a == null) {
@@ -145,7 +147,6 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
                 db.ai().parkUnreadable(MAX_ATTEMPTS)
             }
         } finally {
-            gemma.close()
             text?.close()
         }
     }

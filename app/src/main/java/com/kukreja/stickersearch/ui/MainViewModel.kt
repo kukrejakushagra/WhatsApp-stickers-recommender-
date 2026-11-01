@@ -108,6 +108,20 @@ data class SearchState(
     val recentlyUsed: List<StickerRow> = emptyList(),
 )
 
+/** "Help me reply" with images: attachments, progress and results. */
+data class AssistState(
+    val attachments: List<Uri> = emptyList(),
+    val running: Boolean = false,
+    val phase: String? = null,
+    val reading: String? = null,
+    val queries: List<String> = emptyList(),
+    val suggestions: List<StickerRow> = emptyList(),
+    val found: List<StickerRow> = emptyList(),
+    val note: String? = null,
+    val millis: Long = 0,
+    val done: Boolean = false,
+)
+
 data class Storage(val models: Long = 0, val previews: Long = 0, val database: Long = 0)
 
 data class UiState(
@@ -120,6 +134,9 @@ data class UiState(
     val ai: AiState = AiState(),
     val models: ModelsState = ModelsState(),
     val search: SearchState = SearchState(),
+    val assist: AssistState = AssistState(),
+    /** One-shot: images arrived from another app, so Search should come to the front. */
+    val openSearch: Boolean = false,
     val packsAdded: Map<StickerPacks.Pack, Boolean> = emptyMap(),
     val packCounts: Map<StickerPacks.Pack, Int> = emptyMap(),
     val batteryUnrestricted: Boolean = false,
@@ -163,6 +180,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = AnnotationRepository(db)
     private val models = ModelStore(app)
     private val engine = SearchEngine(app)
+    private val assistant = com.kukreja.stickersearch.search.ImageAssist(app, engine)
     private val diagnosticEngine = ScanEngine(app, Thumbnailer(File(app.cacheDir, "diag-thumbs")))
     val sharer = StickerSharer(app, events)
 
@@ -385,6 +403,67 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun clearRecentSearches() {
         searchPrefs.edit().remove("recent").apply()
         _state.update { it.copy(search = it.search.copy(recent = emptyList())) }
+    }
+
+    // ---------------- help me reply (images) ----------------
+
+    fun attach(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        _state.update { s ->
+            val list = (s.assist.attachments + uris).distinct().take(com.kukreja.stickersearch.ml.GemmaAnnotator.MAX_IMAGES)
+            s.copy(assist = s.assist.copy(attachments = list, done = false))
+        }
+    }
+
+    fun removeAttachment(uri: Uri) = _state.update { s ->
+        val left = s.assist.attachments - uri
+        s.copy(assist = if (left.isEmpty()) AssistState() else s.assist.copy(attachments = left, done = false))
+    }
+
+    fun clearAssist() = _state.update { it.copy(assist = AssistState()) }
+
+    fun consumeOpenSearch() = _state.update { it.copy(openSearch = false) }
+
+    /** Reads the attached images (and the typed text) and suggests reply stickers. */
+    fun runAssist() {
+        val st = _state.value
+        if (st.assist.running) return
+        val text = st.search.query
+        val uris = st.assist.attachments
+        if (uris.isEmpty() && text.isBlank()) return
+        _state.update { it.copy(assist = it.assist.copy(running = true, phase = "Opening images", done = false, note = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val images = uris.mapNotNull { u ->
+                runCatching {
+                    val bytes = ctx.contentResolver.openInputStream(u)?.use { it.readBytes() } ?: return@runCatching null
+                    val bmp = android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes))) { d, info, _ ->
+                        d.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                        val w = info.size.width; val h = info.size.height
+                        // Screenshots are read at up to 1080 px wide: enough for text, bounded memory.
+                        if (w > 1080) d.setTargetSize(1080, (h * 1080f / w).toInt().coerceAtLeast(1))
+                    }
+                    bmp to bytes
+                }.getOrNull()
+            }
+            val r = runCatching {
+                assistant.run(images, text) { phase -> _state.update { it.copy(assist = it.assist.copy(phase = phase)) } }
+            }
+            images.forEach { it.first.recycle() }
+            val byId = _state.value.stickers.associateBy { it.id }
+            _state.update {
+                val res = r.getOrNull()
+                it.copy(assist = it.assist.copy(
+                    running = false, phase = null, done = true,
+                    reading = res?.plan?.reading?.takeIf { s -> s.isNotBlank() },
+                    queries = res?.plan?.queries.orEmpty(),
+                    suggestions = res?.suggestions.orEmpty().mapNotNull { h -> byId[h.id] },
+                    found = res?.found.orEmpty().mapNotNull { (id, _) -> byId[id] },
+                    millis = res?.millis ?: 0,
+                    note = r.exceptionOrNull()?.let { e -> "Couldn't finish: ${e.message}. Try again." } ?: res?.note
+                        ?: if (images.size < uris.size) "${uris.size - images.size} image(s) couldn't be opened." else null,
+                ))
+            }
+        }
     }
 
     // ---------------- corrections ----------------
@@ -628,13 +707,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Images shared from WhatsApp, the gallery or a screenshot go to "Help me reply" in Search. */
     fun handleShareIntent(intent: Intent?) {
         if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return
-        viewModelScope.launch {
-            val n = withContext(Dispatchers.IO) { sharer.importShared(intent, importDir) }
-            toast(if (n == 1) "Imported 1 sticker. Run a scan to include it." else "Imported $n stickers. Run a scan to include them.")
-            refreshPermissions()
+        val uris = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java))
+            else -> intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
         }
+        events.add("share_in", mapOf("type" to intent.type, "count" to uris.size))
+        if (uris.isEmpty()) return
+        attach(uris)
+        _state.update { it.copy(openSearch = true) }
+        toast(if (uris.size == 1) "Image added. Tap Suggest stickers." else "${uris.size} images added. Tap Suggest stickers.")
     }
 
     fun consumeMessage() = _state.update { it.copy(message = null) }

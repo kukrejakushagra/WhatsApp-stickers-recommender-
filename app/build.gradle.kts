@@ -14,8 +14,8 @@ android {
         // Android 16 only for now; see docs/04-roadmap.md "Android version support".
         minSdk = 36
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.3.3"
+        versionCode = 9
+        versionName = "0.4.0"
         ndk {
             // The phone is arm64; other ABIs would only add ~100 MB of native ML libraries.
             abiFilters += "arm64-v8a"
@@ -24,7 +24,19 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 removes unused code from Compose, Guava, protobuf and the ML libraries (~35 MB of dex → a few MB).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Sideloaded personal build: signed with the debug key so it installs over earlier debug builds.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+    packaging {
+        jniLibs {
+            // Store the ONNX Runtime and MediaPipe libraries compressed: ~60 MB → ~22 MB in the APK.
+            // Android extracts them once at install time.
+            useLegacyPackaging = true
         }
     }
     compileOptions {

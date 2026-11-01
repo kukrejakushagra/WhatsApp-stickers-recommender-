@@ -64,6 +64,10 @@ data class AppActions(
     val saveCorrection: (Long, Correction) -> Unit = { _, _ -> },
     val resetCorrection: (Long) -> Unit = {},
     val openBatterySettings: () -> Unit = {},
+    val attachImages: () -> Unit = {},
+    val removeAttachment: (android.net.Uri) -> Unit = {},
+    val runAssist: () -> Unit = {},
+    val clearAssist: () -> Unit = {},
 )
 
 @Composable
@@ -73,6 +77,10 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { vm.onTreePicked(it) }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { vm.importModels(it) }
     val expected = remember { arrayOfNulls<ModelKind>(1) }
+    // The system photo picker: no storage permission, and only the images chosen are shared.
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(com.kukreja.stickersearch.ml.GemmaAnnotator.MAX_IMAGES),
+    ) { vm.attach(it) }
     val addPack = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         vm.onAddPackResult(r.resultCode, r.data)
     }
@@ -118,18 +126,27 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             saveCorrection = vm::saveCorrection,
             resetCorrection = vm::resetCorrection,
             openBatterySettings = { runCatching { context.startActivity(vm.batteryIntent()) } },
+            attachImages = {
+                photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            removeAttachment = vm::removeAttachment,
+            runAssist = vm::runAssist,
+            clearAssist = vm::clearAssist,
         )
     }
-    AppShell(state, actions)
+    AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)
 }
 
 private enum class Tab { SEARCH, LIBRARY, SETTINGS }
 
 @Composable
-fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0) {
+fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchOpened: () -> Unit = {}) {
     // First launch without any stickers opens Settings, where access is granted.
     var tab by rememberSaveable { mutableIntStateOf(if (state.loaded && state.stickers.isEmpty()) Tab.SETTINGS.ordinal else initialTab) }
     var selected by remember { mutableStateOf<StickerRow?>(null) }
+    androidx.compose.runtime.LaunchedEffect(state.openSearch) {
+        if (state.openSearch) { tab = Tab.SEARCH.ordinal; onSearchOpened() }
+    }
     KdsGround(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().statusBarsPadding()) {
             when (Tab.entries[tab]) {
