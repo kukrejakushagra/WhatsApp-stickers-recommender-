@@ -375,6 +375,14 @@ private fun AiPanel(state: UiState, actions: AppActions) {
             val per = if (ai.lastAnnotationMs > 0) " · about %.0f s per sticker".format(ai.lastAnnotationMs / 1000.0) else ""
             Text("Gemma runs on the $b$per", style = Kds.type.caption, color = Kds.colors.mutedForeground)
         }
+        if (ai.describePaused) {
+            Spacer(Modifier.height(8.dp))
+            KdsCallout("Describing is paused: the app closed ${com.kukreja.stickersearch.ml.DescribeGuard.PAUSE_AFTER} times in a row while Gemma was working " +
+                "(last: ${ai.lastCrash ?: "unknown"}). It now uses the CPU and less memory. Close other apps, then tap Start now to try again.", CalloutTone.ERROR)
+        } else if (ai.lastCrash != null && System.currentTimeMillis() - ai.lastCrashAt < 86_400_000L) {
+            Spacer(Modifier.height(8.dp))
+            KdsCallout("The app closed while Gemma was working (${ai.lastCrash}). That sticker was skipped and Gemma moved to safer settings.", CalloutTone.WARNING)
+        }
         ai.gemmaError?.let {
             Spacer(Modifier.height(8.dp))
             KdsCallout("Gemma couldn't start: $it. Check that the file is gemma-3n-E2B-it-int4.task, then import it again.", CalloutTone.ERROR)

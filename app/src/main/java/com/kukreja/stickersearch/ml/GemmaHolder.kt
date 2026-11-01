@@ -30,7 +30,7 @@ object GemmaHolder {
         } finally {
             idleClose = scope.launch {
                 delay(IDLE_MS)
-                lock.withLock { gemma?.close(); gemma = null }
+                lock.withLock { runCatching { gemma?.close() }; gemma = null }
             }
         }
     }

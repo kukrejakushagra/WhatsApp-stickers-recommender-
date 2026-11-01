@@ -17,7 +17,12 @@ import java.io.File
  * Animated stickers are shown as a 2×2 contact sheet of keyframes in time order, so the model
  * sees the motion in one image pass.
  */
-class GemmaAnnotator private constructor(private val llm: LlmInference, val backend: String) : AutoCloseable {
+class GemmaAnnotator private constructor(
+    private val llm: LlmInference,
+    val backend: String,
+    /** How many images one call may take (1 in low-memory mode). */
+    val maxImages: Int = MAX_IMAGES,
+) : AutoCloseable {
 
     data class Result(val annotation: Annotation?, val raw: String, val millis: Long)
 
@@ -48,13 +53,13 @@ class GemmaAnnotator private constructor(private val llm: LlmInference, val back
             .build()
         val raw = LlmInferenceSession.createFromOptions(llm, opts).use { s ->
             s.addQueryChunk(replyPrompt(images.size, userText))
-            images.take(MAX_IMAGES).forEach { s.addImage(BitmapImageBuilder(fit(it)).build()) }
+            images.take(maxImages).forEach { s.addImage(BitmapImageBuilder(fit(it)).build()) }
             s.generateResponse()
         }
         return ReplyPlan.parse(raw) to raw
     }
 
-    override fun close() = llm.close()
+    override fun close() { runCatching { llm.close() } }
 
     companion object {
         const val PROMPT_VERSION = 1
@@ -68,13 +73,17 @@ class GemmaAnnotator private constructor(private val llm: LlmInference, val back
          */
         fun open(context: Context, model: File): GemmaAnnotator {
             val prefs = context.getSharedPreferences("gemma_backend", Context.MODE_PRIVATE)
-            val gpuCrashedBefore = prefs.getBoolean("gpu_trying", false) && !prefs.getBoolean("gpu_ok", false)
+            val gpuCrashedBefore = prefs.getBoolean("gpu_bad", false) ||
+                (prefs.getBoolean("gpu_trying", false) && !prefs.getBoolean("gpu_ok", false))
+            // After a crash on the CPU too, use less memory: one image per call and a shorter reply budget.
+            val lite = prefs.getBoolean("lite", false)
+            val images = if (lite) 1 else MAX_IMAGES
             fun build(b: LlmInference.Backend) = LlmInference.createFromOptions(
                 context,
                 LlmInference.LlmInferenceOptions.builder()
                     .setModelPath(model.absolutePath)
-                    .setMaxTokens(1280)
-                    .setMaxNumImages(MAX_IMAGES)
+                    .setMaxTokens(if (lite) 1024 else 1280)
+                    .setMaxNumImages(images)
                     .setPreferredBackend(b)
                     .build(),
             )
@@ -82,10 +91,18 @@ class GemmaAnnotator private constructor(private val llm: LlmInference, val back
                 prefs.edit().putBoolean("gpu_trying", true).commit()
                 val gpu = runCatching { build(LlmInference.Backend.GPU) }.getOrNull()
                 prefs.edit().putBoolean("gpu_trying", false).putBoolean("gpu_ok", gpu != null).commit()
-                if (gpu != null) return GemmaAnnotator(gpu, "GPU")
+                if (gpu != null) return GemmaAnnotator(gpu, "GPU", images)
             }
-            return GemmaAnnotator(build(LlmInference.Backend.CPU), "CPU")
+            return GemmaAnnotator(build(LlmInference.Backend.CPU), if (lite) "CPU (low memory)" else "CPU", images)
         }
+
+        /** The GPU crashed mid-reply: use the CPU from now on (slower, but it finishes). */
+        fun giveUpGpu(context: Context) =
+            context.getSharedPreferences("gemma_backend", Context.MODE_PRIVATE).edit().putBoolean("gpu_bad", true).commit()
+
+        /** The CPU crashed too: switch to the low-memory settings. */
+        fun useLite(context: Context) =
+            context.getSharedPreferences("gemma_backend", Context.MODE_PRIVATE).edit().putBoolean("lite", true).commit()
 
         fun prompt(animated: Boolean, durationMs: Long?): String = buildString {
             append("You are labelling a WhatsApp sticker so a person can find it later by typing what they want to say.\n")

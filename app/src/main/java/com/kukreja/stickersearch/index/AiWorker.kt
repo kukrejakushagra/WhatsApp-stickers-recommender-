@@ -23,6 +23,7 @@ import com.kukreja.stickersearch.data.StickerEntity
 import com.kukreja.stickersearch.graph.GraphRepository
 import com.kukreja.stickersearch.ml.GemmaAnnotator
 import com.kukreja.stickersearch.ml.GemmaHolder
+import com.kukreja.stickersearch.ml.DescribeGuard
 import com.kukreja.stickersearch.ml.ImageEmbedder
 import com.kukreja.stickersearch.ml.ModelKind
 import com.kukreja.stickersearch.ml.ModelStore
@@ -151,8 +152,19 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
     }
 
     private suspend fun annotatePass() {
+        val ctx = applicationContext
+        // The last model call never finished: the process died inside Gemma (see DescribeGuard).
+        DescribeGuard.takeUnfinished(ctx)?.let { u ->
+            if (u.stickerId > 0) {
+                db.ai().annotationFailed(u.stickerId, "The app closed while describing this on the ${u.backend}: ${u.why}", System.currentTimeMillis())
+                db.ai().parkUnreadable(MAX_ATTEMPTS)
+            }
+        }
+        if (DescribeGuard.paused(ctx)) return
         // Shared with the reply assistant, so the two never load separate 3 GB copies.
+        DescribeGuard.begin(ctx, 0, "loading")
         val backend = runCatching { GemmaHolder.use(applicationContext) { it.backend } }
+            .also { DescribeGuard.end(ctx, ok = false) }
             .getOrElse {
                 status(applicationContext).edit().putString(KEY_GEMMA_ERROR, "${it.javaClass.simpleName}: ${it.message}").apply()
                 return
@@ -173,7 +185,13 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
                         db.ai().annotationFailed(s.id, "no image to show the model", System.currentTimeMillis())
                         continue
                     }
-                    val r = runCatching { GemmaHolder.use(applicationContext) { g -> g.annotate(frames, s.isAnimated, s.durationMs) } }
+                    val r = runCatching {
+                        GemmaHolder.use(applicationContext) { g ->
+                            DescribeGuard.begin(ctx, s.id, g.backend)
+                            g.annotate(frames, s.isAnimated, s.durationMs)
+                        }
+                    }
+                    DescribeGuard.end(ctx, ok = r.getOrNull()?.annotation != null)
                     frames.forEach { it.recycle() }
                     val a = r.getOrNull()?.annotation
                     if (a == null) {

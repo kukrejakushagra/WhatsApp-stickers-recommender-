@@ -84,6 +84,11 @@ data class AiState(
     val gemmaError: String? = null,
     val gemmaBackend: String? = null,
     val lastAnnotationMs: Long = 0,
+    /** Why the app last closed inside Gemma, if it did. */
+    val lastCrash: String? = null,
+    val lastCrashAt: Long = 0,
+    /** Describing stopped after repeated crashes; Start now tries again. */
+    val describePaused: Boolean = false,
 )
 
 data class ModelsState(
@@ -240,6 +245,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch(Dispatchers.Default) { engine.warmUp() }
+        // If the app died inside Gemma (describing or suggesting replies), record it now.
+        viewModelScope.launch(Dispatchers.IO) {
+            com.kukreja.stickersearch.ml.DescribeGuard.takeUnfinished(ctx)?.let { u ->
+                if (u.stickerId > 0) {
+                    db.ai().annotationFailed(u.stickerId, "The app closed while describing this on the ${u.backend}: ${u.why}", System.currentTimeMillis())
+                    db.ai().parkUnreadable(AiWorker.MAX_ATTEMPTS)
+                }
+                events.add("gemma_crash", mapOf("sticker" to u.stickerId, "backend" to u.backend, "why" to u.why))
+                if (u.stickerId == -1L) toast("Suggesting replies closed the app (${u.why}). Gemma now uses safer settings; try again.")
+            }
+        }
         // The graph reloads whenever the AI worker rebuilds it.
         viewModelScope.launch(Dispatchers.IO) {
             db.graph().observeCounts().collect { c ->
@@ -256,6 +272,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         gemmaError = st.getString(AiWorker.KEY_GEMMA_ERROR, null),
                         gemmaBackend = st.getString(AiWorker.KEY_GEMMA_BACKEND, null),
                         lastAnnotationMs = st.getLong(AiWorker.KEY_LAST_ANNOTATION_MS, 0),
+                        lastCrash = com.kukreja.stickersearch.ml.DescribeGuard.lastCrash(ctx),
+                        lastCrashAt = com.kukreja.stickersearch.ml.DescribeGuard.lastCrashAt(ctx),
+                        describePaused = com.kukreja.stickersearch.ml.DescribeGuard.paused(ctx),
                     ))
                 }
             }
@@ -375,7 +394,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Runs all AI passes now, including annotation on battery (the user asked). */
-    fun runAiNow() = AiWorker.enqueue(ctx, manual = true)
+    fun runAiNow() {
+        com.kukreja.stickersearch.ml.DescribeGuard.resume(ctx)
+        AiWorker.enqueue(ctx, manual = true)
+    }
 
     // ---------------- search ----------------
 
@@ -858,6 +880,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .put("total", s.ai.counts.total)
             .put("gemmaBackend", st.getString(AiWorker.KEY_GEMMA_BACKEND, null) ?: JSONObject.NULL)
             .put("gemmaError", st.getString(AiWorker.KEY_GEMMA_ERROR, null) ?: JSONObject.NULL)
+            .put("gemmaLastCrash", com.kukreja.stickersearch.ml.DescribeGuard.lastCrash(ctx) ?: JSONObject.NULL)
+            .put("gemmaCrashStreak", com.kukreja.stickersearch.ml.DescribeGuard.streak(ctx))
+            .put("processExits", org.json.JSONArray(com.kukreja.stickersearch.ml.DescribeGuard.recentExits(ctx)))
             .put("lastAnnotationMs", st.getLong(AiWorker.KEY_LAST_ANNOTATION_MS, 0))
             .put("lastSearchMs", s.search.millis)
             .put("searchIndexSize", engine.size)

@@ -57,7 +57,13 @@ class ImageAssist(private val context: Context, private val engine: SearchEngine
         var plan: ReplyPlan? = null
         if (models.has(ModelKind.GEMMA) && (images.isNotEmpty() || text.isNotBlank())) {
             onPhase("Reading the conversation")
-            val r = runCatching { GemmaHolder.use(context) { g -> g.planReply(images.map { it.first }, text) } }
+            val r = runCatching {
+                GemmaHolder.use(context) { g ->
+                    com.kukreja.stickersearch.ml.DescribeGuard.begin(context, -1, g.backend)
+                    g.planReply(images.map { it.first }, text)
+                }
+            }
+            com.kukreja.stickersearch.ml.DescribeGuard.end(context, ok = r.isSuccess)
             plan = r.getOrNull()?.first
             if (plan == null) {
                 notes += r.exceptionOrNull()?.let { "Gemma couldn't read it: ${it.message}" }
