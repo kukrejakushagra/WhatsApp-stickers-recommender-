@@ -172,7 +172,7 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
         Box(Modifier.fillMaxSize().statusBarsPadding()) {
             when (Tab.entries[tab]) {
                 Tab.SEARCH -> SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
-                Tab.LIBRARY -> LibraryScreen(state, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
+                Tab.LIBRARY -> LibraryScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
                 Tab.SETTINGS -> SettingsScreen(state, actions)
             }
         }
@@ -187,7 +187,7 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
                         ?: (state.index.total - state.index.done).takeIf { it > 0 } else null),
                 ),
                 selected = tab,
-                onSelect = { tab = it },
+                onSelect = { if (it != tab && state.selecting) actions.stopSelecting(); tab = it },
                 modifier = Modifier.navigationBarsPadding(),
             )
         }
@@ -195,7 +195,9 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
     selected?.let { s ->
         // Keep the sheet in step with the live row (status, thumbnail) while it's open.
         val live = state.stickers.firstOrNull { it.id == s.id } ?: s
-        StickerSheet(live, actions, state, onOpen = { selected = it }) { selected = null }
+        StickerSheet(live, actions, state, onOpen = { selected = it }, onSearch = { q ->
+            selected = null; actions.stopSelecting(); tab = Tab.SEARCH.ordinal; actions.useRecent(q)
+        }) { selected = null }
     }
 }
 

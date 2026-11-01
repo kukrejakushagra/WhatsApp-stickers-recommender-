@@ -42,8 +42,10 @@ import com.kukreja.stickersearch.ui.kds.theme.Kds
 private enum class Filter { ALL, ANIMATED, LOTTIE, NOT_DESCRIBED, ATTENTION }
 
 @Composable
-internal fun LibraryScreen(state: UiState, onOpen: (StickerRow) -> Unit, goToSettings: () -> Unit) {
+internal fun LibraryScreen(state: UiState, actions: AppActions, onOpen: (StickerRow) -> Unit, goToSettings: () -> Unit) {
     var filter by rememberSaveable { mutableStateOf(Filter.ALL) }
+    var naming by remember { mutableStateOf(false) }
+    val selecting = state.selecting
     val all = state.stickers
 
     if (all.isEmpty()) {
@@ -75,12 +77,13 @@ internal fun LibraryScreen(state: UiState, onOpen: (StickerRow) -> Unit, goToSet
     LazyVerticalGrid(
         GridCells.Fixed(3), Modifier.fillMaxSize(), state = gridState,
         // Extra end padding keeps the fast-scroll handle off the last tile column.
-        contentPadding = PaddingValues(start = 16.dp, end = 24.dp, bottom = BottomClearance),
+        contentPadding = PaddingValues(start = 16.dp, end = 24.dp, bottom = BottomClearance + if (selecting) 112.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
-                KdsAppBar("Library", subtitle = "Newest first", inset = 4.dp)
+                KdsAppBar("Library", subtitle = "Newest first", inset = 4.dp,
+                    trailing = { if (!selecting) SelectButton(actions) })
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     KdsStatCard("%,d".format(all.size), "Stickers", Modifier.weight(1f))
                     KdsStatCard("%,d".format(state.ai.counts.annotated), "Described", Modifier.weight(1f))
@@ -109,7 +112,8 @@ internal fun LibraryScreen(state: UiState, onOpen: (StickerRow) -> Unit, goToSet
             }
         }
         items(items, key = { it.id }) { s ->
-            KdsMediaTile(onClick = { onOpen(s) }, label = tileLabel(s)) {
+            KdsMediaTile(onClick = { if (selecting) actions.toggleSelected(s.id) else onOpen(s) }, label = tileLabel(s),
+                selectable = selecting, picked = s.id in state.selected) {
                 Thumb(s.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (s.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
             }
         }
@@ -120,5 +124,28 @@ internal fun LibraryScreen(state: UiState, onOpen: (StickerRow) -> Unit, goToSet
         topInset = 96.dp, bottomInset = BottomClearance,
         label = { i -> items.getOrNull(i - 1)?.newest?.takeIf { it > 0 }?.let { monthFmt.format(java.util.Date(it)) } },
     )
+    if (selecting) {
+        SelectionBar(
+            count = state.selected.size, topLabel = "First 30",
+            // Lottie stickers can't go into WhatsApp packs, so "First 30" skips them.
+            onTop = { actions.selectTop(items.filterNot { it.isLottie() }.map { it.id }) },
+            onCancel = actions.stopSelecting,
+            onCreate = { naming = true },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = BottomClearance - 8.dp),
+        )
+    }
+    }
+    if (naming) {
+        val default = when (filter) {
+            Filter.ANIMATED -> "Animated"
+            Filter.NOT_DESCRIBED -> "New stickers"
+            else -> "My stickers"
+        }
+        NameDialog(
+            title = "Create a sticker pack",
+            description = "${state.selected.size} sticker${if (state.selected.size == 1) "" else "s"} selected. Static and animated stickers become separate packs, as WhatsApp requires; each needs at least ${com.kukreja.stickersearch.share.StickerPacks.MIN}.",
+            initial = default, confirmLabel = "Create and add",
+            onConfirm = { name -> naming = false; actions.createPacks(name) }, onDismiss = { naming = false },
+        )
     }
 }

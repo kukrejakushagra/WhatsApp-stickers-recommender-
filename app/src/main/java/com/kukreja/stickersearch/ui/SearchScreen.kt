@@ -213,29 +213,6 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
 }
 
 @Composable
-private fun SelectButton(actions: AppActions) =
-    KdsButton("Select", { actions.startSelecting(null) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM, icon = R.drawable.ic_kds_check)
-
-/** Floating glass bar while picking stickers for a pack. */
-@Composable
-private fun SelectionBar(count: Int, onTop: () -> Unit, onCancel: () -> Unit, onCreate: () -> Unit, modifier: Modifier) {
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(com.kukreja.stickersearch.ui.kds.theme.KdsRadius.x2l)
-    Column(
-        modifier.fillMaxWidth().glass(com.kukreja.stickersearch.ui.kds.Glass.FLOATING, shape, elevation = 12.dp).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("%d of %d selected".format(count, com.kukreja.stickersearch.share.StickerPacks.MAX),
-            style = Kds.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = Kds.colors.foreground)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            KdsButton("Top 30", onTop, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
-            KdsButton("Cancel", onCancel, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
-            Spacer(Modifier.weight(1f))
-            KdsButton("Create pack", onCreate, size = ButtonSize.SM, icon = R.drawable.ic_kds_folder, enabled = count > 0)
-        }
-    }
-}
-
-@Composable
 private fun SectionLabel(text: String) {
     Text(text.uppercase(), style = Kds.type.overline, color = Kds.colors.mutedForeground,
         modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))

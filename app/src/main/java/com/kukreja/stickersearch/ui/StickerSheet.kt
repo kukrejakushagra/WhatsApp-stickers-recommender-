@@ -57,6 +57,7 @@ import com.kukreja.stickersearch.ui.kds.ButtonSize
 import com.kukreja.stickersearch.ui.kds.ButtonVariant
 import com.kukreja.stickersearch.ui.kds.CalloutTone
 import com.kukreja.stickersearch.ui.kds.KdsBadge
+import com.kukreja.stickersearch.ui.kds.KdsFilterChip
 import com.kukreja.stickersearch.ui.kds.KdsButton
 import com.kukreja.stickersearch.ui.kds.KdsCallout
 import com.kukreja.stickersearch.ui.kds.KdsEmptyState
@@ -111,6 +112,7 @@ internal fun StickerSheet(
     actions: AppActions,
     state: UiState,
     onOpen: (StickerRow) -> Unit,
+    onSearch: (String) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val message = state.message
@@ -171,10 +173,13 @@ internal fun StickerSheet(
                 a.emotions.forEach { KdsBadge(pretty(it), BadgeTone.SOFT) }
                 a.intents.forEach { KdsBadge(pretty(it), BadgeTone.SECONDARY) }
             }
-            if (a.tags.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(a.tags.joinToString(" · "), style = Kds.type.caption, color = Kds.colors.mutedForeground)
-            }
+            Keywords(a, onSearch)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (details?.corrected == true) "Edited by you · saved on this phone"
+                else "Described on this phone · saved, so the AI never redoes it",
+                style = Kds.type.labelXs, color = Kds.colors.mutedForeground,
+            )
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 KdsButton("Edit", { editing = true }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
@@ -323,6 +328,34 @@ private fun RelatedRow(title: String, rows: List<StickerRow>, currentId: Long, o
                     .border(if (current) 2.dp else 1.dp, if (current) Kds.colors.brand else Kds.colors.glassBorder, RoundedCornerShape(8.dp))
                     .then(if (current) Modifier else Modifier.clickable { onOpen(r) }).padding(4.dp),
             ) { Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image) }
+        }
+    }
+}
+
+/** Tags and search phrases (English, Hinglish, Hindi); tapping one searches for it. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Keywords(a: com.kukreja.stickersearch.ml.Annotation, onSearch: (String) -> Unit) {
+    val tags = a.tags.distinct()
+    val phrases = a.phrases.filter { p -> tags.none { it.equals(p, ignoreCase = true) } }.distinct()
+    if (tags.isEmpty() && phrases.isEmpty() && a.emoji.isBlank()) return
+    Spacer(Modifier.height(14.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("KEYWORDS", style = Kds.type.overline, color = Kds.colors.mutedForeground)
+        if (a.emoji.isNotBlank()) Text(a.emoji, style = Kds.type.heading)
+    }
+    if (tags.isNotEmpty()) {
+        Spacer(Modifier.height(6.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            tags.forEach { t -> KdsFilterChip(t, false, { onSearch(t) }) }
+        }
+    }
+    if (phrases.isNotEmpty()) {
+        Spacer(Modifier.height(10.dp))
+        Text("Search phrases", style = Kds.type.caption, color = Kds.colors.mutedForeground)
+        Spacer(Modifier.height(6.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            phrases.forEach { t -> KdsFilterChip(t, false, { onSearch(t) }) }
         }
     }
 }

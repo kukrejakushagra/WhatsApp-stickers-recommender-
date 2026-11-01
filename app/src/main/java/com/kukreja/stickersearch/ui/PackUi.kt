@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -184,3 +185,27 @@ internal fun PackSheet(info: PackInfo, state: UiState, actions: AppActions, onDi
         onConfirm = { deleting = false; actions.deletePack(p); onDismiss() }, onDismiss = { deleting = false },
     )
 }
+
+@Composable
+internal fun SelectButton(actions: AppActions) =
+    KdsButton("Select", { actions.startSelecting(null) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM, icon = R.drawable.ic_kds_check)
+
+/** Floating glass bar while picking stickers for a pack. */
+@Composable
+internal fun SelectionBar(count: Int, topLabel: String = "Top 30", onTop: () -> Unit, onCancel: () -> Unit, onCreate: () -> Unit, modifier: Modifier) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(com.kukreja.stickersearch.ui.kds.theme.KdsRadius.x2l)
+    Column(
+        modifier.fillMaxWidth().glass(Glass.FLOATING, shape, elevation = 12.dp).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("%d of %d selected".format(count, StickerPacks.MAX),
+            style = Kds.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = Kds.colors.foreground)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            KdsButton(topLabel, onTop, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
+            KdsButton("Cancel", onCancel, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+            Spacer(Modifier.weight(1f))
+            KdsButton("Create pack", onCreate, size = ButtonSize.SM, icon = R.drawable.ic_kds_folder, enabled = count > 0)
+        }
+    }
+}
+
