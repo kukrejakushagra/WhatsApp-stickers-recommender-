@@ -148,3 +148,20 @@ How the schema meets the requirements:
 - **Incremental indexing.** A `sticker_files` row whose `(uri, size, last_modified)` is unchanged is skipped. A changed one is re-hashed, and a new hash creates a new sticker.
 - **Corrections are preserved.** The effective annotation is `COALESCE(correction, ai)`, computed in the repository layer. The FTS row and the embedding are rebuilt from the effective text whenever either side changes.
 - **Removals.** A file that isn't seen in a full scan gets `missing_since`. A sticker with no live files is `MISSING`, but it keeps its annotations in case the file comes back.
+
+
+## Sticker graph (0.5.0)
+
+All of it is on-device and rebuilt in the background when its inputs change (`graph/GraphBuilder`, `graph/StickerGraph`). There are two tables:
+- `sticker_edges(a, b, type, weight, label)`;
+- `frame_vectors(sticker_id, which, vector)`, holding SigLIP2 vectors of the first and last keyframes.
+
+The tables were added with a Room auto-migration from v1 to v2.
+
+| Edge | Rule | Why |
+|---|---|---|
+| STORY a→b | cos(last keyframe of a, first keyframe of b) ≥ 0.90; the clips' overall look must also agree (≥ 0.70) and the reverse direction mustn't fit better. Bonuses apply for files received within 10 min, or consecutive `STK-YYYYMMDD-WAnnnn` names. Mutual best successor and predecessor only | Stickers cut from one video continue each other frame to frame |
+| LOOKS | Image kNN, k=6, cos ≥ 0.86, excluding near-duplicates (≥ 0.995) | Same character or art style |
+| TOPIC | A shared tag used by 2 to ~3% of the library (generic words excluded), with e5 meaning similarity ≥ 0.82. Labelled by the tag, top 8 per sticker | Themes like driving or cycling that have no visual link |
+
+Retrieval expands the top search hits through their links: score = 1/(rank+1) × weight × kind (story 1.0, looks 0.6, topic 0.5). The stickers it adds are shown with the reason ("same story", "looks alike", "driving"). The thresholds are first guesses. The report lists edge counts and the strongest edges so they can be tuned on the real library.

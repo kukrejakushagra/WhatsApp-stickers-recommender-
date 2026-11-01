@@ -174,7 +174,7 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
     selected?.let { s ->
         // Keep the sheet in step with the live row (status, thumbnail) while it's open.
         val live = state.stickers.firstOrNull { it.id == s.id } ?: s
-        StickerSheet(live, actions, state.message) { selected = null }
+        StickerSheet(live, actions, state.message, onOpen = { selected = it }) { selected = null }
     }
 }
 

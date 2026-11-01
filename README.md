@@ -16,6 +16,8 @@ A native Android app (Kotlin + Jetpack Compose) that indexes the WhatsApp sticke
 | Pass 1: looks | SigLIP2 image embeddings for every sticker (minutes), so all of them can be searched visually on the first night |
 | Pass 2: meaning | Gemma 3n E2B describes each sticker from its image, or from a contact sheet of keyframes for animated ones: description, text in the sticker, emotions, conversational intents, tags, and English/Hinglish/Hindi search phrases. Newest first, while charging |
 | Search | Hybrid ranking with reciprocal rank fusion of three signals: multilingual-e5 text vectors, SigLIP2 text→image vectors, and keyword matching. It also handles negation ("not offensive", "gussa nahi") and Hinglish glosses. Everything is in memory, with no vector database |
+| Help me reply | Attach up to 3 screenshots or images (photo picker, or share them into the app). Gemma reads the chat and any text you add, says what's going on, and suggests reply stickers. Library stickers that appear in the images are found by exact file or by SigLIP2 match of image crops |
+| Related stickers (graph) | A local sticker graph with three link kinds: **story** (clips cut from one video, found when one clip's last keyframe matches the next one's first), **looks alike** (same character or art) and **topic** (a shared specific theme such as driving or cycling, confirmed by meaning). Search adds a "Related" section by expanding the top results through the graph; each sticker shows its story in order, its look-alikes and its topics |
 | Corrections | Edit any description, emotions, intents or tags. Your edits are stored separately and always win over the AI, including after re-analysis |
 | Sending | Two dynamic "Sticker Search" packs (static and animated) served through WhatsApp's documented third-party sticker-pack provider. The sticker you choose goes first, WhatsApp opens, and you send it from its picker as a real sticker. "Share as photo" is the fallback |
 | Background | Daily check while charging: scan, then visual pass, then annotation. Long runs show a progress notification (foreground media processing) |
@@ -50,12 +52,20 @@ The tokenizer tests compare against reference IDs and run only when the tokenize
 ./gradlew testDebugUnitTest -PspModelsDir=/path/with/e5-and-siglip2-folders
 ```
 
-## Install
+## Release build
 
-Requires Android 16 (API 36) and an arm64 phone. Sideload `app/build/outputs/apk/debug/app-debug.apk`, or use adb:
+The sideload build is the minified release, about 32 MB. R8 shrinking takes the code from about 35 MB to 4.5 MB, and native libraries are stored compressed. It's signed with the debug key so it installs over earlier builds:
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease
+```
+
+## Install
+
+Requires Android 16 (API 36) and an arm64 phone. Sideload `app/build/outputs/apk/release/app-release.apk`, or use adb:
+
+```bash
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 ## First run

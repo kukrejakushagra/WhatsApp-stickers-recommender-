@@ -106,6 +106,8 @@ data class SearchState(
     val searched: Boolean = false,
     val recent: List<String> = emptyList(),
     val recentlyUsed: List<StickerRow> = emptyList(),
+    /** Graph neighbours of the top results, with why each is related. */
+    val related: List<Pair<StickerRow, String>> = emptyList(),
 )
 
 /** "Help me reply" with images: attachments, progress and results. */
@@ -137,6 +139,7 @@ data class UiState(
     val assist: AssistState = AssistState(),
     /** One-shot: images arrived from another app, so Search should come to the front. */
     val openSearch: Boolean = false,
+    val graph: Map<com.kukreja.stickersearch.data.EdgeType, Int> = emptyMap(),
     val packsAdded: Map<StickerPacks.Pack, Boolean> = emptyMap(),
     val packCounts: Map<StickerPacks.Pack, Int> = emptyMap(),
     val batteryUnrestricted: Boolean = false,
@@ -161,6 +164,10 @@ data class StickerDetails(
     val model: Annotation? = null,
     val corrected: Boolean = false,
     val confidence: Float = 0f,
+    /** The story this sticker belongs to, in order (includes itself). */
+    val story: List<StickerRow> = emptyList(),
+    val looks: List<StickerRow> = emptyList(),
+    val topics: List<Pair<String, List<StickerRow>>> = emptyList(),
 )
 
 fun StickerRow.formatEnum(): StickerFormat = runCatching { StickerFormat.valueOf(format) }.getOrDefault(StickerFormat.UNKNOWN)
@@ -187,6 +194,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length()))
     val state: StateFlow<UiState> = _state
     private var searchJob: Job? = null
+    private val graphRepo = com.kukreja.stickersearch.graph.GraphRepository(app)
+    @Volatile private var graph = com.kukreja.stickersearch.graph.StickerGraph(emptyList())
 
     init {
         Sync.schedule(app)
@@ -224,6 +233,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch(Dispatchers.Default) { engine.warmUp() }
+        // The graph reloads whenever the AI worker rebuilds it.
+        viewModelScope.launch(Dispatchers.IO) {
+            db.graph().observeCounts().collect { c ->
+                graph = graphRepo.load()
+                _state.update { it.copy(graph = c.associate { x -> x.type to x.n }) }
+            }
+        }
         viewModelScope.launch {
             AiWorker.observe(ctx).collect { p ->
                 val st = AiWorker.status(ctx)
@@ -296,7 +312,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             frames = db.frames().forSticker(id), paths = db.files().pathsFor(id),
             annotation = repo.effective(id), model = repo.model(id), corrected = db.ai().correction(id) != null,
             confidence = s?.confidence ?: 0f,
-        )
+        ).let { d ->
+            val rel = graph.related(id)
+            val byId = _state.value.stickers.associateBy { it.id }
+            d.copy(
+                story = rel.story.mapNotNull { byId[it] },
+                looks = rel.looks.mapNotNull { byId[it] },
+                topics = rel.topics.map { (label, ids) -> label to ids.mapNotNull { byId[it] } }.filter { it.second.isNotEmpty() },
+            )
+        }
     }
 
     // ---------------- models & AI ----------------
@@ -381,9 +405,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(search = it.search.copy(searching = true)) }
         val r = withContext(Dispatchers.Default) { engine.search(q) }
         val byId = _state.value.stickers.associateBy { it.id }
+        // Graph-expanded retrieval: stickers linked to the best results (same story, look, or theme).
+        val related = graph.expand(r.hits.map { it.id }, r.hits.map { it.id }.toSet()).mapNotNull { (id, why) -> byId[id]?.let { it to why } }
         _state.update {
             it.copy(search = it.search.copy(
                 results = r.hits.mapNotNull { h -> byId[h.id] }, matched = r.hits.associate { h -> h.id to h.matched },
+                related = related,
                 searching = false, millis = r.millis, searched = true,
             ))
         }
@@ -654,6 +681,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 it.id to "${StickerPacks.entries(ctx, it).size} stickers, added=${StickerPacks.isAdded(ctx, it)}"
             } as Map<*, *>))
             .put("batteryUnrestricted", batteryUnrestricted())
+            .put("graph", JSONObject().apply {
+                db.graph().counts().forEach { put(it.type.name, it.n) }
+                put("buildMs", ctx.getSharedPreferences("graph", Context.MODE_PRIVATE).getLong("build_ms", 0))
+                put("frameVectors", db.graph().frameVectorCount())
+                put("strongest", JSONArray().apply {
+                    db.graph().strongest(10).forEach { e -> put("${e.type} ${e.a}->${e.b} %.3f ${e.label ?: ""}".format(e.weight)) }
+                })
+            })
     }
 
     private suspend fun indexStats(): JSONObject {

@@ -180,6 +180,10 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 2.dp, top = 2.dp))
                 }
             }
+            if (s.related.isNotEmpty() && !s.searching) {
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Related") }
+                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), onOpen) }
+            }
         }
     }
 }

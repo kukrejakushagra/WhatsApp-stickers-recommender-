@@ -18,7 +18,9 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.kukreja.stickersearch.data.AnnotationRepository
 import com.kukreja.stickersearch.data.StickerDatabase
+import com.kukreja.stickersearch.data.FrameVectorEntity
 import com.kukreja.stickersearch.data.StickerEntity
+import com.kukreja.stickersearch.graph.GraphRepository
 import com.kukreja.stickersearch.ml.GemmaAnnotator
 import com.kukreja.stickersearch.ml.GemmaHolder
 import com.kukreja.stickersearch.ml.ImageEmbedder
@@ -51,9 +53,11 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
         runCatching { setForeground(IndexNotification.info(ctx, 0, 0, "Preparing search")) }
         status(ctx).edit().putLong(KEY_LAST_RUN, System.currentTimeMillis()).apply()
 
-        if (models.has(ModelKind.SIGLIP_VISION)) visualPass()
+        if (models.has(ModelKind.SIGLIP_VISION)) { visualPass(); frameVectorPass() }
         if (isStopped) return Result.success()
         if (models.has(ModelKind.E5)) textPass()
+        if (isStopped) return Result.success()
+        graphPass()
         if (isStopped) return Result.success()
 
         if (models.has(ModelKind.GEMMA)) {
@@ -79,14 +83,53 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
                 for (s in batch) {
                     if (isStopped) return
                     val frames = imagesFor(s, preferOriginal = false)
-                    val v = if (frames.isEmpty()) null else runCatching { Vectors.mean(frames.map(e::embed)) }.getOrNull()
+                    val each = if (frames.isEmpty()) emptyList() else runCatching { frames.map(e::embed) }.getOrDefault(emptyList())
+                    val v = if (each.isEmpty()) null else Vectors.mean(each)
                     frames.forEach { it.recycle() }
+                    if (s.isAnimated && each.size >= 2) saveFrameVectors(s.id, each.first(), each.last())
                     // A sticker that can't be embedded gets a zero-length vector so it isn't retried forever.
                     db.ai().setImageEmbedding(s.id, v?.let(Vectors::toBytes) ?: ByteArray(0), System.currentTimeMillis())
                     tick()
                 }
             }
         }
+    }
+
+    private suspend fun saveFrameVectors(id: Long, first: FloatArray, last: FloatArray) {
+        db.graph().putFrameVectors(listOf(
+            FrameVectorEntity(id, "first", Vectors.toBytes(first)), FrameVectorEntity(id, "last", Vectors.toBytes(last)),
+        ))
+    }
+
+    /** First/last keyframe vectors for animated stickers fingerprinted before the graph existed. */
+    private suspend fun frameVectorPass() {
+        val embedder = runCatching { ImageEmbedder(models.file(ModelKind.SIGLIP_VISION)) }.getOrNull() ?: return
+        embedder.use { e ->
+            phase = "Linking stories"
+            while (!isStopped) {
+                val batch = db.graph().needingFrameVectors(64)
+                if (batch.isEmpty()) break
+                for (s in batch) {
+                    val frames = db.frames().forSticker(s.id)
+                    val firstBmp = frames.firstOrNull()?.let { BitmapFactory.decodeFile(it.framePath) }
+                    val lastBmp = frames.lastOrNull()?.takeIf { frames.size >= 2 }?.let { BitmapFactory.decodeFile(it.framePath) }
+                    if (firstBmp != null && lastBmp != null) {
+                        saveFrameVectors(s.id, e.embed(firstBmp), e.embed(lastBmp))
+                    } else {
+                        // Mark as done with identical vectors so it isn't retried; it can't link a story.
+                        val one = (firstBmp ?: lastBmp)?.let(e::embed) ?: FloatArray(0)
+                        saveFrameVectors(s.id, one, one)
+                    }
+                    firstBmp?.recycle(); lastBmp?.recycle()
+                }
+            }
+        }
+    }
+
+    private suspend fun graphPass() {
+        phase = "Connecting related stickers"
+        setProgress(workDataOf(KEY_PHASE to phase, KEY_DONE to 0, KEY_TOTAL to 0))
+        runCatching { GraphRepository(applicationContext).rebuildIfStale() }
     }
 
     private suspend fun textPass() {
@@ -145,7 +188,10 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
                     status(applicationContext).edit().putLong(KEY_LAST_ANNOTATION_MS, r.getOrNull()?.millis ?: 0L).apply()
                 }
                 db.ai().parkUnreadable(MAX_ATTEMPTS)
+                // New descriptions bring new topics: refresh the graph every so often.
+                if (done > 0 && done % 500 == 0) graphPass()
             }
+            graphPass()
         } finally {
             text?.close()
         }

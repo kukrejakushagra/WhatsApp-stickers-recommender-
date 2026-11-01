@@ -142,3 +142,47 @@ data class StickerFtsEntity(
     val phrases: String,
     @ColumnInfo(name = "ocr_text") val ocrText: String,
 )
+
+/** Relationship kinds in the sticker graph. */
+enum class EdgeType {
+    /** b continues a: cut from the same video, a's last frame ≈ b's first frame (directed a → b). */
+    STORY,
+    /** Same character or artwork. */
+    LOOKS,
+    /** A shared, specific theme (label says which, e.g. "driving"). */
+    TOPIC,
+}
+
+/** One relationship between two stickers; undirected types are stored once with a < b. */
+@Entity(
+    tableName = "sticker_edges",
+    primaryKeys = ["a", "b", "type"],
+    foreignKeys = [
+        ForeignKey(entity = StickerEntity::class, parentColumns = ["id"], childColumns = ["a"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = StickerEntity::class, parentColumns = ["id"], childColumns = ["b"], onDelete = ForeignKey.CASCADE),
+    ],
+    indices = [Index("b")],
+)
+data class StickerEdgeEntity(
+    val a: Long,
+    val b: Long,
+    val type: EdgeType,
+    val weight: Float,
+    val label: String? = null,
+)
+
+/** Image vectors of an animated sticker's first and last keyframes, for finding story continuations. */
+@Entity(
+    tableName = "frame_vectors",
+    primaryKeys = ["sticker_id", "which"],
+    foreignKeys = [ForeignKey(entity = StickerEntity::class, parentColumns = ["id"], childColumns = ["sticker_id"], onDelete = ForeignKey.CASCADE)],
+)
+data class FrameVectorEntity(
+    @ColumnInfo(name = "sticker_id") val stickerId: Long,
+    /** "first" or "last". */
+    val which: String,
+    val vector: ByteArray,
+) {
+    override fun equals(other: Any?) = other is FrameVectorEntity && other.stickerId == stickerId && other.which == which
+    override fun hashCode() = stickerId.hashCode() * 31 + which.hashCode()
+}

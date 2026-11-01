@@ -11,6 +11,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -105,7 +106,13 @@ private fun pretty(label: String) = label.replace('_', ' ')
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun StickerSheet(s: StickerRow, actions: AppActions, message: String?, onDismiss: () -> Unit) {
+internal fun StickerSheet(
+    s: StickerRow,
+    actions: AppActions,
+    message: String?,
+    onOpen: (StickerRow) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var reload by remember { mutableIntStateOf(0) }
     val details by produceState<StickerDetails?>(null, s.id, reload, s.status) { value = actions.details(s.id) }
     var editing by remember { mutableStateOf(false) }
@@ -202,6 +209,11 @@ internal fun StickerSheet(s: StickerRow, actions: AppActions, message: String?, 
                 }
             }
         }
+        details?.let { d ->
+            if (d.story.size > 1) RelatedRow("Part of a story · ${d.story.indexOfFirst { it.id == s.id } + 1} of ${d.story.size}", d.story, s.id, onOpen)
+            if (d.looks.isNotEmpty()) RelatedRow("Looks alike", d.looks, s.id, onOpen)
+            d.topics.forEach { (label, rows) -> RelatedRow("Also about $label", rows, s.id, onOpen) }
+        }
         Spacer(Modifier.height(10.dp))
         if (showFiles) {
             KdsKeyValue("Hash", s.sha256.take(16) + "…", mono = true)
@@ -286,4 +298,22 @@ internal fun LottiePreview(uri: Uri, modifier: Modifier) {
         modifier = modifier,
         update = { v -> v.setComposition(c); v.playAnimation() },
     )
+}
+
+/** A titled, scrolling row of related stickers; the current one is outlined. */
+@Composable
+private fun RelatedRow(title: String, rows: List<StickerRow>, currentId: Long, onOpen: (StickerRow) -> Unit) {
+    Spacer(Modifier.height(14.dp))
+    Text(title.uppercase(), style = Kds.type.overline, color = Kds.colors.mutedForeground)
+    Spacer(Modifier.height(6.dp))
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        rows.forEach { r ->
+            val current = r.id == currentId
+            Box(
+                Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)).background(Kds.colors.glassClear)
+                    .border(if (current) 2.dp else 1.dp, if (current) Kds.colors.brand else Kds.colors.glassBorder, RoundedCornerShape(8.dp))
+                    .then(if (current) Modifier else Modifier.clickable { onOpen(r) }).padding(4.dp),
+            ) { Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image) }
+        }
+    }
 }

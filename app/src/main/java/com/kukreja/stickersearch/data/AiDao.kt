@@ -97,6 +97,12 @@ interface AiDao {
     @Query("SELECT COALESCE(MAX(updated_at), 0) + COUNT(*) FROM stickers")
     fun observeVersion(): Flow<Long>
 
+    @Query("SELECT COALESCE(MAX(updated_at), 0) + COUNT(*) FROM stickers")
+    suspend fun observeVersionOnce(): Long
+
+    @Query("SELECT COUNT(*) FROM sticker_tags")
+    suspend fun tagCount(): Int
+
     @Query("UPDATE stickers SET image_embedding = :v, updated_at = :now WHERE id = :id")
     suspend fun setImageEmbedding(id: Long, v: ByteArray, now: Long)
 

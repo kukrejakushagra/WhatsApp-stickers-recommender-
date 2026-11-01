@@ -346,6 +346,16 @@ private fun AiPanel(state: UiState, actions: AppActions) {
             },
             style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
         )
+        if (state.graph.isNotEmpty()) {
+            val g = state.graph
+            Text(
+                "Connections: %,d story links · %,d look-alikes · %,d shared topics".format(
+                    g[com.kukreja.stickersearch.data.EdgeType.STORY] ?: 0, g[com.kukreja.stickersearch.data.EdgeType.LOOKS] ?: 0,
+                    g[com.kukreja.stickersearch.data.EdgeType.TOPIC] ?: 0,
+                ),
+                style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
+            )
+        }
         ai.gemmaBackend?.let { b ->
             val per = if (ai.lastAnnotationMs > 0) " · about %.0f s per sticker".format(ai.lastAnnotationMs / 1000.0) else ""
             Text("Gemma runs on the $b$per", style = Kds.type.caption, color = Kds.colors.mutedForeground)
