@@ -1,6 +1,23 @@
 # 01 — Discovery and feasibility report
 
-Status: **provisional**. Statements marked *(verify on device)* are hypotheses that the Milestone 1 diagnostic app is built to confirm or refute on the user's Honor X9c (Android 16, MagicOS). Nothing here claims that all favourites can be imported until the device report is in.
+Status: **verified on device (2026-11-01)**: Honor X9c (BRP-NX1), Android 16 / MagicOS 10, WhatsApp 2.26.42.74. The "Device results" section below supersedes any *(verify on device)* hypothesis further down.
+
+## Device results (M1 run)
+
+| Finding | Result |
+|---|---|
+| SAF tree on `Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Stickers` | Works; 5,023 files → 4,902 unique (121 duplicate files); 3,578 animated WebP, 1,310 static WebP, 14 `.was` |
+| Extra sticker folder | `Media/WhatsApp Backup Excluded Stickers`, 125 unique stickers not in the folder above |
+| Total reachable | ≈ 5,027 unique stickers, a superset of the ~1,000 favourites; the user confirmed nearly all frequently used favourites are present |
+| `Backups/Stickers` (5,199 files) | WhatsApp's encrypted backup copies; unreadable as images and excluded |
+| MediaStore | 5,183 rows, all those encrypted backups (the sticker folder has `.nomedia`); dropped as a source |
+| `Android/data/com.whatsapp` | Exists, not listable even with all-files access (as expected) |
+| Animated WebP decoding | All 3,625 animated WebP decode as animations with the platform `ImageDecoder` |
+| `.was` stickers (75) | Zip archives (Lottie); not decodable by `ImageDecoder`, rendered with lottie-android from M2 |
+| Oldest file timestamp | June 2026: older stickers were likely re-created by a backup restore or removed by storage cleanup |
+| `ACTION_SEND` of a WebP to WhatsApp | Arrives as a **photo**, not a sticker; real sticker sending needs the sticker-pack provider (M5) |
+
+**Decision: GO.** Source of record: a SAF tree on `WhatsApp/Media`, walking only sticker folders and skipping `Backups/`. All-files access stays an optional fallback.
 
 Covers deliverables 1–6 and 12: problem understanding, technical discovery, WhatsApp storage analysis, favourites-extraction feasibility, alternatives comparison, risk register and feasibility decision.
 
@@ -107,7 +124,7 @@ Classification key:
 
 ## 12. Feasibility decision
 
-**Conditional GO, pending the Milestone 1 device report.**
+**GO** (decided 2026-11-01 from the device results above). The original criteria were:
 
 - **GO** if the SAF or file scan finds a unique sticker set covering the user's frequently used favourites (target: most of ~1,000), and animated WebP decodes with `animatedDecodeFailures ≈ 0`.
 - **PARTIAL** if a large share is missing. The likely causes are pack stickers or media cleanup. The fallback (share-in, Accessibility-assisted flagging, or third-party pack providers) is chosen with the user before M2.

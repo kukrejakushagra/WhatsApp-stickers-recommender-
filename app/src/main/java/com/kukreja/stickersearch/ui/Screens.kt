@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,10 +22,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -52,12 +53,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.airbnb.lottie.LottieAnimationView
+import com.airbnb.lottie.LottieComposition
+import com.airbnb.lottie.LottieCompositionFactory
+import com.airbnb.lottie.LottieDrawable
 import com.kukreja.stickersearch.R
-import com.kukreja.stickersearch.diagnostics.ScanSummary
+import com.kukreja.stickersearch.data.StickerRow
+import com.kukreja.stickersearch.data.StickerStatus
 import com.kukreja.stickersearch.discovery.SafTreeSource
-import com.kukreja.stickersearch.model.SourceId
 import com.kukreja.stickersearch.model.StickerFormat
-import com.kukreja.stickersearch.model.UniqueSticker
 import com.kukreja.stickersearch.share.StickerSharer
 import com.kukreja.stickersearch.ui.kds.BadgeTone
 import com.kukreja.stickersearch.ui.kds.ButtonSize
@@ -86,18 +90,21 @@ import com.kukreja.stickersearch.ui.kds.NavItem
 import com.kukreja.stickersearch.ui.kds.theme.Kds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.zip.ZipInputStream
 
 /** Everything the screens can ask for; keeps the screens stateless and previewable. */
 data class AppActions(
     val pickFolder: () -> Unit = {},
     val openAllFiles: () -> Unit = {},
-    val scan: () -> Unit = {},
+    val scan: (retryFailed: Boolean) -> Unit = {},
+    val runDiagnostic: () -> Unit = {},
     val clearAll: () -> Unit = {},
     val copyReport: () -> Unit = {},
     val shareReport: () -> Unit = {},
-    val send: (UniqueSticker, StickerSharer.Mode) -> Unit = { _, _ -> },
+    val send: (StickerRow, StickerSharer.Mode) -> Unit = { _, _ -> },
     val messageShown: () -> Unit = {},
-    val reportJson: () -> String = { "{}" },
+    val reportJson: suspend () -> String = { "{}" },
+    val details: suspend (Long) -> StickerDetails = { StickerDetails(emptyList(), emptyList()) },
 )
 
 @Composable
@@ -111,12 +118,14 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             pickFolder = { treePicker.launch(SafTreeSource.initialStickerFolderUri()) },
             openAllFiles = openAllFilesSettings,
             scan = vm::scan,
+            runDiagnostic = vm::runDiagnostic,
             clearAll = vm::clearAll,
             copyReport = vm::copyReport,
             shareReport = { vm.shareReport(context) },
             send = { s, m -> vm.send(context, s, m) },
             messageShown = vm::consumeMessage,
             reportJson = vm::reportJson,
+            details = vm::details,
         )
     }
     AppShell(state, actions)
@@ -140,7 +149,8 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0) {
             KdsBottomNav(
                 items = listOf(
                     NavItem("Setup", R.drawable.ic_kds_sliders),
-                    NavItem("Stickers", R.drawable.ic_kds_grid),
+                    NavItem("Stickers", R.drawable.ic_kds_grid, count = state.index.total.takeIf { state.index.running && it > 0 }
+                        ?.let { it - state.index.done }),
                     NavItem("Report", R.drawable.ic_kds_file),
                 ),
                 selected = tab,
@@ -161,15 +171,17 @@ private fun SetupScreen(state: UiState, actions: AppActions, onScanned: () -> Un
     var confirmDelete by remember { mutableStateOf(false) }
     val pickedStickersOnly = p.safHeld && p.safTreeId?.endsWith("WhatsApp Stickers") == true
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        KdsAppBar("Sticker access", subtitle = "Diagnostics, step 1")
+        KdsAppBar("Sticker library", subtitle = "Index your WhatsApp stickers")
         Column(
             Modifier.padding(horizontal = 16.dp).padding(bottom = BottomClearance),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            KdsCallout(
-                "Pick WhatsApp's Media folder, run a scan, then copy the report. Nothing leaves your phone unless you share it.",
-                CalloutTone.NEUTRAL,
-            )
+            if (!p.safHeld) {
+                KdsCallout(
+                    "Pick WhatsApp's Media folder, then run a scan. Everything stays on your phone.",
+                    CalloutTone.NEUTRAL,
+                )
+            }
             KdsSettingsGroup("Access", listOf(
                 {
                     KdsSettingsRow(
@@ -189,7 +201,7 @@ private fun SetupScreen(state: UiState, actions: AppActions, onScanned: () -> Un
                     KdsSettingsRow(
                         title = "All files access",
                         icon = R.drawable.ic_kds_shield,
-                        description = "Optional. Finds sticker folders the picker misses.",
+                        description = "Optional. Used only when the folder isn't picked.",
                         trailing = {
                             if (p.allFiles) KdsBadge("Granted", BadgeTone.SOFT)
                             else KdsButton("Open settings", actions.openAllFiles, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
@@ -199,10 +211,11 @@ private fun SetupScreen(state: UiState, actions: AppActions, onScanned: () -> Un
             ))
             if (pickedStickersOnly) {
                 KdsCallout(
-                    "You picked WhatsApp Stickers only, so 125 or so stickers in Backup Excluded Stickers are missed. Pick Media instead.",
+                    "You picked WhatsApp Stickers only, so the stickers in Backup Excluded Stickers are missed. Pick Media instead.",
                     CalloutTone.WARNING, title = "One folder is missing",
                 )
             }
+            ScanPanel(state, actions, onScanned)
             KdsSettingsGroup("Manual test", listOf {
                 KdsSettingsRow(
                     title = "Share from WhatsApp",
@@ -210,12 +223,11 @@ private fun SetupScreen(state: UiState, actions: AppActions, onScanned: () -> Un
                     description = "Long-press a sticker in a chat and share it here. ${state.eventCount} events logged.",
                 )
             })
-            ScanPanel(state, actions, onScanned)
             KdsSettingsGroup("Data", listOf {
                 KdsSettingsRow(
-                    title = "Delete scan data",
+                    title = "Delete index",
                     icon = R.drawable.ic_kds_trash,
-                    description = "Thumbnails, imports and logs. Your WhatsApp stickers stay untouched.",
+                    description = "Thumbnails, keyframes, imports and logs. Your WhatsApp stickers stay untouched.",
                     danger = true,
                     onClick = { confirmDelete = true },
                 )
@@ -224,8 +236,8 @@ private fun SetupScreen(state: UiState, actions: AppActions, onScanned: () -> Un
     }
     if (confirmDelete) {
         KdsDialog(
-            title = "Delete scan data?",
-            description = "Thumbnails, imported stickers and logs are removed. Your WhatsApp stickers stay untouched.",
+            title = "Delete the index?",
+            description = "Thumbnails, keyframes, imported stickers and logs are removed. Your WhatsApp stickers stay untouched, and a new scan rebuilds everything.",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = { confirmDelete = false; actions.clearAll() },
@@ -238,63 +250,75 @@ private fun SetupScreen(state: UiState, actions: AppActions, onScanned: () -> Un
 private fun ScanPanel(state: UiState, actions: AppActions, onScanned: () -> Unit) {
     val p = state.permissions
     val canScan = p.safHeld || p.allFiles
+    val ix = state.index
     KdsPanel {
-        val summary = state.outcome?.summary
         when {
-            state.scanning -> {
-                val prog = state.progress
-                Text(prog?.phase ?: "Starting", style = Kds.type.bodyStrong, color = Kds.colors.foreground)
+            ix.running -> {
+                Text(ix.phase ?: "Starting", style = Kds.type.bodyStrong, color = Kds.colors.foreground)
                 Spacer(Modifier.height(10.dp))
-                KdsProgress(prog?.takeIf { it.total > 0 }?.let { it.done.toFloat() / it.total })
+                KdsProgress(ix.total.takeIf { it > 0 }?.let { ix.done.toFloat() / it })
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    prog?.let { "%,d of %,d".format(it.done, it.total) } ?: "Listing files",
+                    if (ix.total > 0) "%,d of %,d new or changed files".format(ix.done, ix.total) else "Listing files",
                     style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
                 )
             }
-            summary != null -> {
-                Text("%,d unique stickers".format(summary.uniqueCount), style = Kds.type.heading, color = Kds.colors.foreground)
-                Text(
-                    "%,d animated · %,d Lottie · %d s".format(
-                        summary.animatedCount, summary.lottieCount, (state.outcome.durationMs / 1000),
-                    ),
-                    style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
-                )
+            state.indexedCount > 0 -> {
+                Text("%,d stickers indexed".format(state.indexedCount), style = Kds.type.heading, color = Kds.colors.foreground)
+                Text(statusLine(state), style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground)
             }
             else -> Text("No scan yet", style = Kds.type.bodyStrong, color = Kds.colors.foreground)
         }
-        if (!state.scanning) {
+        ix.error?.let {
+            Spacer(Modifier.height(10.dp))
+            KdsCallout("$it. Check the folder access above, then scan again.", CalloutTone.ERROR)
+        }
+        if (!ix.running) {
             Spacer(Modifier.height(14.dp))
             KdsButton(
-                text = when { !canScan -> "Pick a folder to start"; summary != null -> "Scan again"; else -> "Run scan" },
-                onClick = { actions.scan(); onScanned() },
+                text = when { !canScan -> "Pick a folder to start"; state.indexedCount > 0 -> "Scan for changes"; else -> "Run scan" },
+                onClick = { actions.scan(false); onScanned() },
                 size = ButtonSize.XL, block = true, enabled = canScan,
-                icon = if (summary != null) R.drawable.ic_kds_refresh else R.drawable.ic_kds_search,
+                icon = if (state.indexedCount > 0) R.drawable.ic_kds_refresh else R.drawable.ic_kds_search,
             )
+            if (state.failedCount > 0) {
+                Spacer(Modifier.height(8.dp))
+                KdsButton("Retry %,d failed".format(state.failedCount), { actions.scan(true) },
+                    variant = ButtonVariant.GHOST, block = true)
+            }
         }
     }
 }
 
+private fun statusLine(state: UiState): String = buildList {
+    add("%,d ready".format(state.statusCounts[StickerStatus.PENDING] ?: 0))
+    if (state.failedCount > 0) add("%,d failed".format(state.failedCount))
+    if (state.reviewCount > 0) add("%,d to review".format(state.reviewCount))
+    if (state.missingCount > 0) add("%,d missing".format(state.missingCount))
+    state.lastRun?.let { add("last scan %d s".format((it.finishedAt - it.startedAt) / 1000)) }
+}.joinToString(" · ")
+
 // ---------------- Stickers ----------------
 
-private enum class Filter { ALL, ANIMATED, LOTTIE }
+private enum class Filter { ALL, ANIMATED, LOTTIE, ATTENTION }
+
+private fun StickerRow.isLottie() = format == StickerFormat.LOTTIE_WAS.name
+private fun StickerRow.needsAttention() = status == StickerStatus.FAILED || status == StickerStatus.NEEDS_REVIEW
 
 @Composable
 private fun StickersScreen(state: UiState, actions: AppActions, goToSetup: () -> Unit) {
-    val summary = state.outcome?.summary
-    var source by rememberSaveable { mutableStateOf<SourceId?>(null) }
     var filter by rememberSaveable { mutableStateOf(Filter.ALL) }
-    var selected by remember { mutableStateOf<UniqueSticker?>(null) }
+    var selected by remember { mutableStateOf<StickerRow?>(null) }
+    val all = state.stickers
 
-    if (summary == null) {
+    if (all.isEmpty()) {
         Column(Modifier.fillMaxSize()) {
             KdsAppBar("Stickers")
             Box(Modifier.fillMaxSize().padding(bottom = BottomClearance), contentAlignment = Alignment.Center) {
-                if (state.scanning) {
-                    KdsEmptyState(R.drawable.ic_kds_loader, "Scanning",
-                        state.progress?.let { "%,d of %,d files".format(it.done, it.total) } ?: "Listing files")
-                } else {
-                    KdsEmptyState(
+                when {
+                    state.index.running -> KdsEmptyState(R.drawable.ic_kds_loader, "Indexing",
+                        if (state.index.total > 0) "%,d of %,d files".format(state.index.done, state.index.total) else "Listing files")
+                    state.loaded -> KdsEmptyState(
                         R.drawable.ic_kds_grid, "No stickers yet",
                         "Pick WhatsApp's Media folder on Setup, then run a scan.",
                         actionLabel = "Go to setup", onAction = goToSetup,
@@ -304,12 +328,21 @@ private fun StickersScreen(state: UiState, actions: AppActions, goToSetup: () ->
         }
         return
     }
-    val items = remember(summary, source, filter) {
-        summary.unique.filter { s ->
-            (source == null || source in s.sources) && when (filter) {
+    val counts = remember(all) {
+        mapOf(
+            Filter.ALL to all.size,
+            Filter.ANIMATED to all.count { it.isAnimated && !it.isLottie() },
+            Filter.LOTTIE to all.count { it.isLottie() },
+            Filter.ATTENTION to all.count { it.needsAttention() },
+        )
+    }
+    val items = remember(all, filter) {
+        all.filter {
+            when (filter) {
                 Filter.ALL -> true
-                Filter.ANIMATED -> s.format.isAnimated && s.format.format != StickerFormat.LOTTIE_WAS
-                Filter.LOTTIE -> s.format.format == StickerFormat.LOTTIE_WAS
+                Filter.ANIMATED -> it.isAnimated && !it.isLottie()
+                Filter.LOTTIE -> it.isLottie()
+                Filter.ATTENTION -> it.needsAttention()
             }
         }
     }
@@ -321,75 +354,47 @@ private fun StickersScreen(state: UiState, actions: AppActions, goToSetup: () ->
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
                 KdsAppBar("Stickers", subtitle = "Newest first", inset = 4.dp)
-                StatRow(summary)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    KdsStatCard("%,d".format(all.size), "Stickers", Modifier.weight(1f))
+                    KdsStatCard("%,d".format(counts.getValue(Filter.ANIMATED) + counts.getValue(Filter.LOTTIE)), "Animated", Modifier.weight(1f))
+                    val attention = counts.getValue(Filter.ATTENTION)
+                    KdsStatCard("%,d".format(attention), "Need a look", Modifier.weight(1f),
+                        valueColor = if (attention > 0) Kds.colors.warning else Kds.colors.foreground)
+                }
+                if (state.index.running) {
+                    Spacer(Modifier.height(12.dp))
+                    KdsProgress(state.index.total.takeIf { it > 0 }?.let { state.index.done.toFloat() / it })
+                    Spacer(Modifier.height(4.dp))
+                    Text("Indexing %,d of %,d".format(state.index.done, state.index.total),
+                        style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground)
+                }
                 Spacer(Modifier.height(16.dp))
-                ChipRow(summary, source, filter, { source = it }, { filter = it })
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    listOf(Filter.ALL to "All", Filter.ANIMATED to "Animated", Filter.LOTTIE to "Lottie", Filter.ATTENTION to "Need a look")
+                        .filter { (f, _) -> f == Filter.ALL || f == filter || counts.getValue(f) > 0 }
+                        .forEach { (f, label) ->
+                            KdsFilterChip(label, filter == f, { filter = if (filter == f) Filter.ALL else f }, counts.getValue(f))
+                        }
+                }
                 Spacer(Modifier.height(10.dp))
-                Text("Showing %,d".format(items.size), style = Kds.type.caption, color = Kds.colors.mutedForeground)
-                Spacer(Modifier.height(4.dp))
             }
         }
-        items(items, key = { it.sha256 }) { s ->
+        items(items, key = { it.id }) { s ->
             KdsMediaTile(
                 onClick = { selected = s },
                 label = when {
-                    s.format.format == StickerFormat.LOTTIE_WAS -> "LOTTIE"
-                    s.format.isAnimated -> "ANIM"
+                    s.needsAttention() -> "CHECK"
+                    s.isLottie() -> "LOTTIE"
+                    s.isAnimated -> "ANIM"
                     else -> null
                 },
             ) { Thumb(s.thumbnailPath, Modifier.fillMaxSize()) }
         }
     }
     selected?.let { StickerSheet(it, actions) { selected = null } }
-}
-
-@Composable
-private fun StatRow(summary: ScanSummary) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        KdsStatCard("%,d".format(summary.uniqueCount), "Unique", Modifier.weight(1f))
-        KdsStatCard("%,d".format(summary.animatedCount), "Animated", Modifier.weight(1f))
-        val problems = summary.failures.count { isStickerProblem(it.format?.format) }
-        KdsStatCard(
-            "%,d".format(problems), "Problems", Modifier.weight(1f),
-            valueColor = if (problems > 0) Kds.colors.destructiveText else Kds.colors.foreground,
-        )
-    }
-}
-
-/** Unknown files (e.g. encrypted backups) and not-yet-rendered Lottie are not problems with stickers. */
-private fun isStickerProblem(f: StickerFormat?) = f != null && f != StickerFormat.UNKNOWN && f != StickerFormat.LOTTIE_WAS
-
-@Composable
-private fun ChipRow(
-    summary: ScanSummary,
-    source: SourceId?,
-    filter: Filter,
-    onSource: (SourceId?) -> Unit,
-    onFilter: (Filter) -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
-    ) {
-        KdsFilterChip("All", source == null && filter == Filter.ALL, { onSource(null); onFilter(Filter.ALL) }, summary.uniqueCount)
-        KdsFilterChip("Animated", filter == Filter.ANIMATED, { onFilter(if (filter == Filter.ANIMATED) Filter.ALL else Filter.ANIMATED) },
-            summary.animatedCount - summary.lottieCount)
-        if (summary.lottieCount > 0) {
-            KdsFilterChip("Lottie", filter == Filter.LOTTIE, { onFilter(if (filter == Filter.LOTTIE) Filter.ALL else Filter.LOTTIE) },
-                summary.lottieCount)
-        }
-        Box(Modifier.width(1.dp).height(20.dp).background(Kds.colors.border))
-        summary.perSource.values.filter { it.uniqueHashes > 0 }.forEach { s ->
-            KdsFilterChip(sourceLabel(s.source), source == s.source,
-                { onSource(if (source == s.source) null else s.source) }, s.uniqueHashes)
-        }
-    }
-}
-
-private fun sourceLabel(s: SourceId) = when (s) {
-    SourceId.SAF_TREE -> "Folder"
-    SourceId.FILE_SYSTEM -> "All files"
-    SourceId.SHARE_IN -> "Shared"
 }
 
 private val thumbCache = LruCache<String, ImageBitmap>(400)
@@ -408,21 +413,23 @@ private fun Thumb(path: String?, modifier: Modifier) {
     else Box(modifier, contentAlignment = Alignment.Center) { KdsIcon(R.drawable.ic_kds_image, 20.dp) }
 }
 
-private fun formatName(s: UniqueSticker) = when (s.format.format) {
+private fun formatName(s: StickerRow) = when (s.formatEnum()) {
     StickerFormat.WEBP_ANIMATED -> "Animated sticker"
     StickerFormat.WEBP_STATIC -> "Sticker"
     StickerFormat.LOTTIE_WAS -> "Lottie sticker"
     StickerFormat.GIF -> "GIF"
-    else -> s.format.format.name.lowercase().replaceFirstChar { it.uppercase() }
+    else -> s.format.lowercase().replaceFirstChar { it.uppercase() }
 }
 
 @Composable
-private fun StickerSheet(s: UniqueSticker, actions: AppActions, onDismiss: () -> Unit) {
-    val dims = if (s.format.width > 0) "${s.format.width}×${s.format.height} · " else ""
-    val frames = if (s.format.frameCount > 1) "${s.format.frameCount} frames · " else ""
+private fun StickerSheet(s: StickerRow, actions: AppActions, onDismiss: () -> Unit) {
+    val details by produceState<StickerDetails?>(null, s.id) { value = actions.details(s.id) }
+    val dims = if (s.width > 0) "${s.width}×${s.height} · " else ""
+    val frames = if (s.frameCount > 1 && !s.isLottie()) "${s.frameCount} frames · " else ""
+    val dur = s.durationMs?.takeIf { it > 0 }?.let { "%.1f s · ".format(it / 1000.0) } ?: ""
     KdsSheet(
         title = formatName(s),
-        subtitle = "$dims$frames${"%,d".format(s.sizeBytes / 1024)} KB",
+        subtitle = "$dims$frames$dur${"%,d".format(s.sizeBytes / 1024)} KB",
         onDismiss = onDismiss,
         footer = {
             Text(
@@ -430,29 +437,49 @@ private fun StickerSheet(s: UniqueSticker, actions: AppActions, onDismiss: () ->
                 style = Kds.type.caption, color = Kds.colors.mutedForeground,
             )
             KdsButton("Send to WhatsApp", { actions.send(s, StickerSharer.Mode.WHATSAPP_DIRECT) },
-                size = ButtonSize.LG, block = true, icon = R.drawable.ic_kds_phone)
+                size = ButtonSize.LG, block = true, icon = R.drawable.ic_kds_phone, enabled = s.primaryUri != null && !s.isLottie())
             KdsButton("Share…", { actions.send(s, StickerSharer.Mode.SYSTEM_SHEET) },
-                variant = ButtonVariant.OUTLINE, size = ButtonSize.LG, block = true, icon = R.drawable.ic_kds_share)
+                variant = ButtonVariant.OUTLINE, size = ButtonSize.LG, block = true, icon = R.drawable.ic_kds_share,
+                enabled = s.primaryUri != null)
         },
     ) {
-        val shape = RoundedCornerShape(18.dp)
         Box(
-            Modifier.fillMaxWidth().height(240.dp).clip(shape).background(Kds.colors.glassClear),
+            Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp)).background(Kds.colors.glassClear),
             contentAlignment = Alignment.Center,
         ) {
-            if (s.format.format == StickerFormat.LOTTIE_WAS) {
-                KdsEmptyState(R.drawable.ic_kds_spark, "Preview not ready", "Lottie stickers play in the next build.")
-            } else {
-                AnimatedPreview(Uri.parse(s.primary.uri), Modifier.fillMaxSize().padding(12.dp))
+            val uri = s.primaryUri?.let(Uri::parse)
+            when {
+                uri == null -> KdsEmptyState(R.drawable.ic_kds_image, "File missing", "Run a scan to find it again.")
+                s.isLottie() -> LottiePreview(uri, Modifier.fillMaxSize().padding(12.dp))
+                else -> AnimatedPreview(uri, Modifier.fillMaxSize().padding(12.dp))
+            }
+        }
+        s.statusError?.let {
+            Spacer(Modifier.height(10.dp))
+            KdsCallout(it, if (s.status == StickerStatus.FAILED) CalloutTone.ERROR else CalloutTone.WARNING)
+        }
+        val fr = details?.frames.orEmpty()
+        if (fr.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text("KEYFRAMES", style = Kds.type.overline, color = Kds.colors.mutedForeground)
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                fr.forEach { f ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)).background(Kds.colors.glassClear)
+                                .border(1.dp, Kds.colors.glassBorder, RoundedCornerShape(8.dp)).padding(4.dp),
+                        ) { Thumb(f.framePath, Modifier.fillMaxSize()) }
+                        Text("%.1f s".format(f.timestampMs / 1000.0), style = Kds.type.labelXs.copy(fontFeatureSettings = "tnum"),
+                            color = Kds.colors.mutedForeground)
+                    }
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
         KdsKeyValue("Hash", s.sha256.take(16) + "…", mono = true)
-        if (s.format.isAnimated && s.format.format != StickerFormat.LOTTIE_WAS) {
-            KdsKeyValue("Playback", if (s.animatedDecodeOk == false) "Didn't decode as animation" else "Plays natively")
-        }
-        KdsKeyValue("Found", if (s.occurrences.size == 1) "1 place" else "${s.occurrences.size} places")
-        s.occurrences.forEach { KdsKeyValue(sourceLabel(it.source), it.displayPath.substringAfterLast("Media/"), mono = true) }
+        KdsKeyValue("Status", s.status.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() })
+        details?.paths?.forEach { KdsKeyValue("File", it.substringAfterLast("Media/"), mono = true) }
     }
 }
 
@@ -475,19 +502,47 @@ private fun AnimatedPreview(uri: Uri, modifier: Modifier) {
     )
 }
 
+/** Plays a WhatsApp .was (zip-packed Lottie) in a loop. */
+@Composable
+private fun LottiePreview(uri: Uri, modifier: Modifier) {
+    val context = LocalContext.current
+    val composition by produceState<LottieComposition?>(null, uri) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    LottieCompositionFactory.fromZipStreamSync(context, ZipInputStream(input), null).value
+                }
+            }.getOrNull()
+        }
+    }
+    val c = composition ?: return Box(modifier, contentAlignment = Alignment.Center) {
+        Text("Loading", style = Kds.type.caption, color = Kds.colors.mutedForeground)
+    }
+    AndroidView(
+        factory = { LottieAnimationView(it).apply { repeatCount = LottieDrawable.INFINITE } },
+        modifier = modifier,
+        update = { v -> v.setComposition(c); v.playAnimation() },
+    )
+}
+
 // ---------------- Report ----------------
 
 @Composable
 private fun ReportScreen(state: UiState, actions: AppActions) {
-    val json = remember(state.outcome, state.eventCount, state.permissions) { actions.reportJson() }
+    val json by produceState("{}", state.diagnostic, state.eventCount, state.indexedCount, state.lastRun) { value = actions.reportJson() }
     Column(Modifier.fillMaxSize()) {
-        KdsAppBar("Report", subtitle = state.outcome?.let { "%,d unique stickers".format(it.summary.uniqueCount) } ?: "No scan yet")
+        KdsAppBar("Report", subtitle = "%,d stickers indexed".format(state.indexedCount))
         Column(Modifier.padding(horizontal = 16.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             KdsCallout("Counts, formats and file names only. No images, no chats.", CalloutTone.NEUTRAL)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 KdsButton("Copy report", actions.copyReport, icon = R.drawable.ic_kds_copy)
-                KdsButton("Share report", actions.shareReport, variant = ButtonVariant.OUTLINE, icon = R.drawable.ic_kds_share)
+                KdsButton("Share", actions.shareReport, variant = ButtonVariant.OUTLINE, icon = R.drawable.ic_kds_share)
             }
+            KdsButton(
+                if (state.diagnosticRunning) "Running diagnostic" else "Run full diagnostic",
+                actions.runDiagnostic, variant = ButtonVariant.GHOST, loading = state.diagnosticRunning,
+                icon = R.drawable.ic_kds_search,
+            )
             KdsPanel(Modifier.weight(1f).padding(bottom = BottomClearance), padding = false) {
                 Text(
                     json, style = Kds.type.mono, color = Kds.colors.foreground,

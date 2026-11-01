@@ -2,7 +2,13 @@
 
 A native Android app (Kotlin + Jetpack Compose) that will index the WhatsApp stickers on your phone, understand them with on-device AI, and let you search them in natural language (English, Hindi, Hinglish).
 
-**Current state: Milestone 1, the feasibility diagnostic.** This build doesn't search yet. It tests which ways of reading your WhatsApp stickers work on your phone, and produces a report that decides GO/NO-GO for the rest of the project.
+**Current state: Milestone 2, indexing.** Sticker access was verified on a real device (about 5,000 unique stickers reachable). The app now keeps a local index of your WhatsApp stickers:
+- Room database.
+- Incremental WorkManager scans.
+- Thumbnails.
+- Keyframes for animated WebP and Lottie `.was` stickers.
+
+Search arrives in M3/M4.
 
 - Discovery and feasibility: [`docs/01-discovery-report.md`](docs/01-discovery-report.md)
 - Architecture, decision matrix and DB schema: [`docs/02-architecture.md`](docs/02-architecture.md)
@@ -71,9 +77,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Favourites can't be identified.** WhatsApp keeps the favourites list in its private database, which the app does not and cannot read. The app indexes every reachable sticker; ranking does the rest.
 - **Some favourites may be missing.** Favourites that came from WhatsApp's own sticker packs, or whose received copy was deleted by WhatsApp's storage cleanup, are expected to be unreachable.
 - **All files access is broad.** It's only used for this diagnostic, and would not be allowed on Google Play for this use. The folder picker is the long-term path.
-- **No persistence yet.** Results live in memory until the app closes; thumbnails are cached on disk. The Room database arrives in M2.
+- **Scans run while the app is in the foreground or shortly after.** A scheduled background sync arrives in M6. An interrupted scan resumes where it left off.
 - **Static grid.** Grid thumbnails show the first frame; animation plays in the detail view.
-- **Lottie `.was` stickers** are counted but not rendered yet (planned for M2).
 - **Sharing sends a photo.** WhatsApp receives an `ACTION_SEND` WebP as a photo, not a sticker; real sticker sending is planned through WhatsApp's sticker-pack provider (M5).
 - **Liquid-glass panels are frosted, not refracting.** Compose has no backdrop blur without an extra library.
 

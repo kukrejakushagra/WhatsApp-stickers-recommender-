@@ -54,10 +54,10 @@ No DI framework yet: there is one ViewModel and constructor injection. Hilt is w
 |---|---|---|---|
 | Language/UI | Kotlin, Jetpack Compose, Material 3 | Views | Requested; least code |
 | Min SDK | 36 (Android 16) for now | 30 | User's decision; the checklist for lowering it is in the Project doc |
-| File access | SAF tree (primary), all-files (diagnostic/optional) | MediaStore, Accessibility | SAF is narrow, persistent and Play-safe |
+| File access | SAF tree on `WhatsApp/Media` (primary), walking only sticker folders; all-files access as fallback | MediaStore (device-tested: only sees encrypted backups), Accessibility | SAF is narrow, persistent and Play-safe |
 | Format detection | Own header sniffer | Trust extensions | WhatsApp uses `.webp` for everything |
 | Previews/animation | `ImageDecoder` + `AnimatedImageDrawable` | Glide, Coil, Fresco | Platform-native, no dependency |
-| Frame extraction (M2) | **libwebp `WebPAnimDecoder` via NDK** for WebP; small GIF decoder for GIF | Fresco animated (large); render `AnimatedImageDrawable` on a timer (imprecise) | Exact frame access and timestamps; about 300 KB native |
+| Frame extraction (M2) | **Pure Kotlin re-wrap**: each ANMF frame's ALPH/VP8/VP8L bitstream is wrapped as a still WebP, decoded with `BitmapFactory`, and composited per blend/dispose. Lottie `.was` via lottie-android | libwebp via NDK (native build, ~300 KB); Fresco (large); timing `AnimatedImageDrawable` (imprecise) | No native code; verified against libwebp on real lossy+alpha and lossless animations |
 | Database | Room (SQLite) | Realm, ObjectBox | Requested; FTS4 support built in |
 | Keyword index | Room `@Fts4` | FTS5 | FTS5 isn't guaranteed in the framework SQLite; FTS4 is enough for about 1k rows |
 | Vector search | Brute-force cosine over float arrays in memory | sqlite-vec, FAISS, HNSW | 1,000 × 768 dims is about 3 MB; a full scan takes under 5 ms |

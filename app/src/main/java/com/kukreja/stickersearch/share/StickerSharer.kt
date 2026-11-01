@@ -10,8 +10,18 @@ import com.kukreja.stickersearch.diagnostics.EventLog
 import com.kukreja.stickersearch.media.FormatSniffer
 import com.kukreja.stickersearch.media.Hasher
 import com.kukreja.stickersearch.model.StickerFormat
-import com.kukreja.stickersearch.model.UniqueSticker
 import java.io.File
+
+/** What the sharer needs to know about a sticker. */
+data class SendTarget(
+    val sha256: String,
+    val format: StickerFormat,
+    val isAnimated: Boolean,
+    val width: Int,
+    val height: Int,
+    val sizeBytes: Long,
+    val uri: String,
+)
 
 /**
  * Sending experiments (M5 preview). The app only opens WhatsApp with the file attached;
@@ -24,10 +34,10 @@ class StickerSharer(private val context: Context, private val events: EventLog) 
     enum class Mode { WHATSAPP_DIRECT, SYSTEM_SHEET }
 
     /** Stages the file (call off the main thread) and returns the intent to start, or an error. */
-    fun prepare(sticker: UniqueSticker, mode: Mode): Result<Intent> {
+    fun prepare(sticker: SendTarget, mode: Mode): Result<Intent> {
         val file = stageCopy(sticker) ?: return Result.failure(IllegalStateException("Could not read the sticker file"))
         val uri = FileProvider.getUriForFile(context, authority, file)
-        val mime = mimeFor(sticker.format.format)
+        val mime = mimeFor(sticker.format)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = mime
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -35,9 +45,9 @@ class StickerSharer(private val context: Context, private val events: EventLog) 
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         events.add("send_test", mapOf(
-            "mode" to mode.name, "mime" to mime, "format" to sticker.format.format.name,
-            "animated" to sticker.format.isAnimated, "sha256" to sticker.sha256.take(12),
-            "width" to sticker.format.width, "height" to sticker.format.height, "bytes" to sticker.sizeBytes,
+            "mode" to mode.name, "mime" to mime, "format" to sticker.format.name,
+            "animated" to sticker.isAnimated, "sha256" to sticker.sha256.take(12),
+            "width" to sticker.width, "height" to sticker.height, "bytes" to sticker.sizeBytes,
         ))
         return Result.success(when (mode) {
             Mode.WHATSAPP_DIRECT -> send.setPackage("com.whatsapp")
@@ -56,12 +66,12 @@ class StickerSharer(private val context: Context, private val events: EventLog) 
     }
 
     /** Copies the original bytes (animation intact) into cache so WhatsApp gets a stable FileProvider URI. */
-    private fun stageCopy(sticker: UniqueSticker): File? {
+    private fun stageCopy(sticker: SendTarget): File? {
         val dir = File(context.cacheDir, "share").apply { mkdirs() }
-        val out = File(dir, "${sticker.sha256.take(16)}.${extFor(sticker.format.format)}")
+        val out = File(dir, "${sticker.sha256.take(16)}.${extFor(sticker.format)}")
         if (out.exists() && out.length() > 0) return out
         return runCatching {
-            context.contentResolver.openInputStream(Uri.parse(sticker.primary.uri))?.use { input ->
+            context.contentResolver.openInputStream(Uri.parse(sticker.uri))?.use { input ->
                 out.outputStream().use { input.copyTo(it) }
             } ?: return null
             out

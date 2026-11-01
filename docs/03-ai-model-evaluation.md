@@ -2,6 +2,13 @@
 
 Status: **preliminary estimates.** The user chose fully on-device inference, a model download of up to ~4 GB, and overnight indexing while charging. Every number below is an order-of-magnitude estimate for a Snapdragon 6 Gen 1 with an Adreno 710 GPU (Honor X9c). The numbers are replaced by measurements in M3, which adds an in-app benchmark screen.
 
+## Update after the device run: about 5,000 stickers, two-pass indexing
+
+The device holds about 5,027 unique stickers, not 1,000. At 15–30 s per VLM annotation, that is 20–40+ hours. The user chose two passes:
+
+1. **Pass 1 (first night, about 25–40 min):** an image-text embedding for every sticker (multilingual SigLIP2, about 0.3–0.5 s each on the X9c). Visual natural-language search works on everything right away, using keyframes for animated stickers.
+2. **Pass 2 (following nights, newest first):** Gemma 3n annotations (description, intents, tags, Hindi/Hinglish phrases). These replace or augment the pass-1 ranking as they arrive.
+
 ## What has to be produced per sticker
 
 - A description.
