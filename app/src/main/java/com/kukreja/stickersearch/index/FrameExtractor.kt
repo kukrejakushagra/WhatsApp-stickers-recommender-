@@ -9,27 +9,33 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
-import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieDrawable
 import com.kukreja.stickersearch.media.WebpAnim
 import java.io.File
-import java.util.zip.ZipInputStream
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
 data class SavedFrame(val index: Int, val timestampMs: Long, val path: String, val changeScore: Float)
 
-data class FrameResult(val frames: List<SavedFrame>, val durationMs: Long?, val thumbnailPath: String? = null)
+/** Keyframes plus a thumbnail; [error] explains an empty result. */
+data class FrameResult(
+    val frames: List<SavedFrame>,
+    val durationMs: Long?,
+    val thumbnailPath: String? = null,
+    val error: String? = null,
+)
 
 /**
- * Extracts keyframes from animated stickers without flattening the original:
- * - animated WebP: each ANMF frame is decoded with BitmapFactory and composited per the
- *   blend/dispose rules, at most [MAX_KEPT] candidates are kept at ≤256px;
- * - Lottie (.was): the composition is rendered at evenly spaced progress points.
- * Then [KeyframeSelector] picks 3–6 frames, saved under frames/<sha>/.
+ * Extracts keyframes from animated stickers without touching the original file:
+ * - animated WebP: each ANMF frame is re-wrapped as a still WebP, decoded with BitmapFactory
+ *   (at half size for 512px stickers) and composited per the blend/dispose rules;
+ * - Lottie (.was): rendered at evenly spaced progress points via [WasRenderer].
+ * [KeyframeSelector] then picks 3–6 frames, saved under frames/<sha>/, plus a thumbnail.
  */
-class FrameExtractor(private val context: Context, private val root: File) {
+class FrameExtractor(private val context: Context, private val root: File, private val thumbs: File) {
+
+    init { thumbs.mkdirs() }
 
     fun webp(sha: String, bytes: ByteArray): FrameResult? {
         val anim = WebpAnim.parse(bytes) ?: return null
@@ -37,51 +43,61 @@ class FrameExtractor(private val context: Context, private val root: File) {
         val ch = anim.canvasHeight.takeIf { it > 0 } ?: anim.frames.maxOf { it.y + it.height }
         val n = anim.frames.size
         val keepEvery = max(1, ceil(n / MAX_KEPT.toDouble()).toInt())
-        val scale = min(1f, MAX_PX / max(cw, ch).toFloat())
-        val canvasBmp = Bitmap.createBitmap(cw, ch, Bitmap.Config.ARGB_8888)
+        // Half-size decode for big canvases: ~4x fewer pixels; output is ≤256px anyway.
+        val sample = if (max(cw, ch) > MAX_PX * 1.5f) 2 else 1
+        val w = max(1, cw / sample)
+        val h = max(1, ch / sample)
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val canvasBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(canvasBmp)
         val clear = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) }
-        val overwrite = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) }
+        val overwrite = Paint(Paint.FILTER_BITMAP_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) }
+        val blend = Paint(Paint.FILTER_BITMAP_FLAG)
+        val scale = min(1f, MAX_PX / max(w, h).toFloat())
         val kept = mutableListOf<Kept>()
         var t = 0L
         var decoded = 0
         try {
             anim.frames.forEachIndexed { i, f ->
-                val still = WebpAnim.standaloneFrame(f)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-                val rect = Rect(f.x, f.y, f.x + f.width, f.y + f.height)
+                val rect = Rect(f.x / sample, f.y / sample, (f.x + f.width) / sample, (f.y + f.height) / sample)
+                val still = WebpAnim.standaloneFrame(f)?.let { BitmapFactory.decodeByteArray(it, 0, it.size, opts) }
                 if (still != null) {
                     decoded++
-                    canvas.drawBitmap(still, null, rect, if (f.blend) null else overwrite)
+                    canvas.drawBitmap(still, null, rect, if (f.blend) blend else overwrite)
                     still.recycle()
                 }
                 if (i % keepEvery == 0 || i == n - 1) {
-                    val copy = Bitmap.createScaledBitmap(canvasBmp, scaled(cw, scale), scaled(ch, scale), true)
+                    val copy = if (scale < 1f) Bitmap.createScaledBitmap(canvasBmp, scaled(w, scale), scaled(h, scale), true)
+                    else canvasBmp.copy(Bitmap.Config.ARGB_8888, false)
                     kept += Kept(i, t, copy, signature(copy))
                 }
                 if (f.disposeToBackground) canvas.drawRect(rect, clear)
                 t += f.durationMs
             }
-            if (decoded == 0) { kept.forEach { it.bitmap.recycle() }; return null }
-            return FrameResult(save(sha, kept), t)
+            if (decoded == 0) {
+                kept.forEach { it.bitmap.recycle() }
+                return FrameResult(emptyList(), t, error = "no frame could be decoded")
+            }
+            return save(sha, kept, t, thumbnailFromFirst = true)
         } finally {
             canvasBmp.recycle()
         }
     }
 
-    /** Renders a WhatsApp .was (zip with a Lottie animation). Returns null when the archive isn't Lottie. */
-    fun lottie(sha: String, bytes: ByteArray): FrameResult? {
-        val composition = LottieCompositionFactory.fromZipStreamSync(context, ZipInputStream(bytes.inputStream()), null).value
-            ?: largestJson(bytes)?.let { LottieCompositionFactory.fromJsonStringSync(it, null).value }
-            ?: return null
+    /** Renders a WhatsApp .was. On failure the result carries the exact reason, for the report. */
+    fun lottie(sha: String, bytes: ByteArray): FrameResult {
+        val loaded = when (val r = WasRenderer.load(context, bytes)) {
+            is WasRenderer.Result.Failed -> return FrameResult(emptyList(), null, error = r.reason)
+            is WasRenderer.Result.Loaded -> r
+        }
+        val composition = loaded.composition
         val b = composition.bounds
-        if (b.width() <= 0 || b.height() <= 0) return null
         val scale = min(1f, MAX_PX / max(b.width(), b.height()).toFloat())
         val w = scaled(b.width(), scale)
         val h = scaled(b.height(), scale)
         val drawable = LottieDrawable().apply { setComposition(composition) }
-        val samples = LOTTIE_SAMPLES
-        val kept = (0 until samples).map { k ->
-            val p = k / (samples - 1f)
+        val kept = (0 until LOTTIE_SAMPLES).map { k ->
+            val p = k / (LOTTIE_SAMPLES - 1f)
             drawable.progress = p
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp)
@@ -89,41 +105,34 @@ class FrameExtractor(private val context: Context, private val root: File) {
             drawable.draw(c)
             Kept(k, (composition.duration * p).toLong(), bmp, signature(bmp))
         }
-        val frames = save(sha, kept)
-        // The grid thumbnail is the middle keyframe: Lottie animations often start empty.
-        return FrameResult(frames, composition.duration.toLong(), frames.getOrNull(frames.size / 2)?.path)
+        if (kept.all { KeyframeSelector.isBlank(it.signature) }) {
+            kept.forEach { it.bitmap.recycle() }
+            return FrameResult(emptyList(), composition.duration.toLong(),
+                error = "the animation (${loaded.source}) renders blank; it may need fonts or images that aren't in the file")
+        }
+        // Lottie animations often start empty, so the thumbnail is the middle keyframe.
+        return save(sha, kept, composition.duration.toLong(), thumbnailFromFirst = false)
     }
 
     private class Kept(val index: Int, val timestampMs: Long, val bitmap: Bitmap, val signature: FloatArray)
 
-    private fun save(sha: String, kept: List<Kept>): List<SavedFrame> {
+    private fun save(sha: String, kept: List<Kept>, durationMs: Long, thumbnailFromFirst: Boolean): FrameResult {
         val choices = KeyframeSelector.select(kept.map { it.signature })
         val dir = File(root, sha).apply { deleteRecursively(); mkdirs() }
-        val chosen = choices.map { ch ->
+        val frames = choices.map { ch ->
             val k = kept[ch.index]
             val f = File(dir, "${k.index}.webp")
             f.outputStream().use { k.bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 85, it) }
             SavedFrame(k.index, k.timestampMs, f.absolutePath, ch.changeScore)
         }
+        // Thumbnail: the first meaningful keyframe (WebP) or the middle one (Lottie), copied to thumbs/.
+        val pick = if (thumbnailFromFirst) frames.firstOrNull() else frames.getOrNull(frames.size / 2)
+        val thumb = pick?.let { p -> File(thumbs, "$sha.webp").also { File(p.path).copyTo(it, overwrite = true) }.absolutePath }
         kept.forEach { it.bitmap.recycle() }
-        return chosen
+        return FrameResult(frames, durationMs, thumb)
     }
 
     private fun scaled(v: Int, s: Float) = max(1, (v * s).toInt())
-
-    private fun largestJson(bytes: ByteArray): String? = runCatching {
-        ZipInputStream(bytes.inputStream()).use { zip ->
-            var best: ByteArray? = null
-            while (true) {
-                val e = zip.nextEntry ?: break
-                if (e.name.endsWith(".json", ignoreCase = true)) {
-                    val data = zip.readBytes()
-                    if (best == null || data.size > best.size) best = data
-                }
-            }
-            best?.toString(Charsets.UTF_8)
-        }
-    }.getOrNull()
 
     companion object {
         const val MAX_KEPT = 48

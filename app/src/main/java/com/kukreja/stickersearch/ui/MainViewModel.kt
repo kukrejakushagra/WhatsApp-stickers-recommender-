@@ -24,6 +24,7 @@ import com.kukreja.stickersearch.discovery.SafTreeSource
 import com.kukreja.stickersearch.discovery.SharedInSource
 import com.kukreja.stickersearch.index.IndexWorker
 import com.kukreja.stickersearch.media.Thumbnailer
+import com.kukreja.stickersearch.media.WasArchive
 import com.kukreja.stickersearch.model.StickerFormat
 import com.kukreja.stickersearch.share.SendTarget
 import com.kukreja.stickersearch.share.StickerSharer
@@ -183,7 +184,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         o.put("keyframes", db.frames().count())
         o.put("lottieSamples", JSONArray().apply {
             db.stickers().lottieSamples(5).forEach {
-                put(JSONObject().put("status", it.status.name).put("frames", it.frameCount).put("error", it.statusError ?: JSONObject.NULL))
+                val bytes = db.stickers().liveUri(it.id)?.let { u ->
+                    runCatching { ctx.contentResolver.openInputStream(Uri.parse(u))?.use { s -> s.readBytes() } }.getOrNull()
+                }
+                put(JSONObject().put("status", it.status.name).put("frames", it.frameCount).put("attempts", it.attempts)
+                    .put("bytes", bytes?.size ?: JSONObject.NULL)
+                    .put("layout", bytes?.let { b -> WasArchive.open(b, ctx.cacheDir).describe() } ?: JSONObject.NULL)
+                    .put("error", it.statusError ?: JSONObject.NULL))
+            }
+        })
+        o.put("stickerProblems", JSONArray().apply {
+            db.stickers().problems(20).forEach {
+                put(JSONObject().put("status", it.status.name).put("format", it.format).put("sha", it.sha256.take(12))
+                    .put("error", it.statusError ?: JSONObject.NULL))
             }
         })
         o.put("fileFailures", JSONArray(db.files().failureSamples(20)))

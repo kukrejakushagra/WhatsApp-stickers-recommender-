@@ -87,6 +87,26 @@ interface StickerDao {
     )
     suspend fun reviveReturned(now: Long): Int
 
+    /** Stickers an earlier scan left unfinished, or Lottie stickers still worth another render attempt. */
+    @Query(
+        """
+        SELECT * FROM stickers
+        WHERE status IN ('DISCOVERED', 'PROCESSING')
+           OR (format = 'LOTTIE_WAS' AND status IN ('NEEDS_REVIEW', 'FAILED') AND attempts < :maxAttempts)
+        LIMIT :limit
+        """,
+    )
+    suspend fun needsRepair(maxAttempts: Int, limit: Int): List<StickerEntity>
+
+    @Query("SELECT uri FROM sticker_files WHERE sticker_id = :stickerId AND missing_since IS NULL LIMIT 1")
+    suspend fun liveUri(stickerId: Long): String?
+
+    @Query("UPDATE stickers SET attempts = 0 WHERE status IN ('FAILED', 'NEEDS_REVIEW')")
+    suspend fun resetProblemAttempts()
+
+    @Query("SELECT * FROM stickers WHERE status IN ('FAILED', 'NEEDS_REVIEW') LIMIT :limit")
+    suspend fun problems(limit: Int): List<StickerEntity>
+
     @Query("SELECT * FROM stickers WHERE format = 'LOTTIE_WAS' LIMIT :limit")
     suspend fun lottieSamples(limit: Int): List<StickerEntity>
 

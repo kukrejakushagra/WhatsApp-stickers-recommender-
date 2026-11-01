@@ -18,7 +18,7 @@ object KeyframeSelector {
         return s / a.size
     }
 
-    private fun isBlank(sig: FloatArray) = sig.all { it < 0.02f } || run {
+    fun isBlank(sig: FloatArray) = sig.all { it < 0.02f } || run {
         val mean = sig.average().toFloat()
         sig.all { abs(it - mean) < 0.01f }
     }

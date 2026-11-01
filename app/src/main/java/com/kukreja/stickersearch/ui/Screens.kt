@@ -54,13 +54,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.airbnb.lottie.LottieAnimationView
-import com.airbnb.lottie.LottieComposition
-import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieDrawable
 import com.kukreja.stickersearch.R
 import com.kukreja.stickersearch.data.StickerRow
 import com.kukreja.stickersearch.data.StickerStatus
 import com.kukreja.stickersearch.discovery.SafTreeSource
+import com.kukreja.stickersearch.index.WasRenderer
 import com.kukreja.stickersearch.model.StickerFormat
 import com.kukreja.stickersearch.share.StickerSharer
 import com.kukreja.stickersearch.ui.kds.BadgeTone
@@ -90,7 +89,6 @@ import com.kukreja.stickersearch.ui.kds.NavItem
 import com.kukreja.stickersearch.ui.kds.theme.Kds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.zip.ZipInputStream
 
 /** Everything the screens can ask for; keeps the screens stateless and previewable. */
 data class AppActions(
@@ -112,12 +110,19 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { vm.onTreePicked(it) }
+    // Asked once, on the first scan: lets the long-scan progress notification show. Denying is fine.
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshPermissions() }
     val actions = remember(vm) {
         AppActions(
             pickFolder = { treePicker.launch(SafTreeSource.initialStickerFolderUri()) },
             openAllFiles = openAllFilesSettings,
-            scan = vm::scan,
+            scan = { retry ->
+                if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                vm.scan(retry)
+            },
             runDiagnostic = vm::runDiagnostic,
             clearAll = vm::clearAll,
             copyReport = vm::copyReport,
@@ -386,12 +391,16 @@ private fun StickersScreen(state: UiState, actions: AppActions, goToSetup: () ->
             KdsMediaTile(
                 onClick = { selected = s },
                 label = when {
-                    s.needsAttention() -> "CHECK"
+                    s.status == StickerStatus.FAILED -> "CHECK"
                     s.isLottie() -> "LOTTIE"
+                    s.status == StickerStatus.NEEDS_REVIEW -> "REVIEW"
                     s.isAnimated -> "ANIM"
                     else -> null
                 },
-            ) { Thumb(s.thumbnailPath, Modifier.fillMaxSize()) }
+            ) {
+                Thumb(s.thumbnailPath, Modifier.fillMaxSize(),
+                    placeholder = if (s.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
+            }
         }
     }
     selected?.let { StickerSheet(it, actions) { selected = null } }
@@ -400,7 +409,7 @@ private fun StickersScreen(state: UiState, actions: AppActions, goToSetup: () ->
 private val thumbCache = LruCache<String, ImageBitmap>(400)
 
 @Composable
-private fun Thumb(path: String?, modifier: Modifier) {
+private fun Thumb(path: String?, modifier: Modifier, placeholder: Int = R.drawable.ic_kds_image) {
     val bmp by produceState<ImageBitmap?>(path?.let { thumbCache.get(it) }, path) {
         if (path != null && value == null) {
             value = withContext(Dispatchers.IO) {
@@ -410,7 +419,7 @@ private fun Thumb(path: String?, modifier: Modifier) {
     }
     val b = bmp
     if (b != null) Image(b, null, modifier)
-    else Box(modifier, contentAlignment = Alignment.Center) { KdsIcon(R.drawable.ic_kds_image, 20.dp) }
+    else Box(modifier, contentAlignment = Alignment.Center) { KdsIcon(placeholder, 20.dp) }
 }
 
 private fun formatName(s: StickerRow) = when (s.formatEnum()) {
@@ -456,7 +465,13 @@ private fun StickerSheet(s: StickerRow, actions: AppActions, onDismiss: () -> Un
         }
         s.statusError?.let {
             Spacer(Modifier.height(10.dp))
-            KdsCallout(it, if (s.status == StickerStatus.FAILED) CalloutTone.ERROR else CalloutTone.WARNING)
+            KdsCallout(
+                if (s.isLottie()) "This Lottie file has no animation we can read yet: $it" else it,
+                if (s.status == StickerStatus.FAILED) CalloutTone.ERROR else CalloutTone.WARNING,
+            )
+            Spacer(Modifier.height(8.dp))
+            KdsButton("Try again", { actions.scan(true) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM,
+                icon = R.drawable.ic_kds_refresh)
         }
         val fr = details?.frames.orEmpty()
         if (fr.isNotEmpty()) {
@@ -502,21 +517,25 @@ private fun AnimatedPreview(uri: Uri, modifier: Modifier) {
     )
 }
 
-/** Plays a WhatsApp .was (zip-packed Lottie) in a loop. */
+/** Plays a WhatsApp .was in a loop, loaded the same way indexing loads it. */
 @Composable
 private fun LottiePreview(uri: Uri, modifier: Modifier) {
     val context = LocalContext.current
-    val composition by produceState<LottieComposition?>(null, uri) {
+    val result by produceState<WasRenderer.Result?>(null, uri) {
         value = withContext(Dispatchers.IO) {
             runCatching {
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    LottieCompositionFactory.fromZipStreamSync(context, ZipInputStream(input), null).value
-                }
-            }.getOrNull()
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("file couldn't be opened")
+                WasRenderer.load(context, bytes)
+            }.getOrElse { WasRenderer.Result.Failed("${it.javaClass.simpleName}: ${it.message}") }
         }
     }
-    val c = composition ?: return Box(modifier, contentAlignment = Alignment.Center) {
-        Text("Loading", style = Kds.type.caption, color = Kds.colors.mutedForeground)
+    val c = when (val r = result) {
+        null -> return Box(modifier, contentAlignment = Alignment.Center) {
+            Text("Loading", style = Kds.type.caption, color = Kds.colors.mutedForeground)
+        }
+        is WasRenderer.Result.Failed -> return KdsEmptyState(R.drawable.ic_kds_spark, "Can't play this one yet",
+            "The details below say why.", modifier)
+        is WasRenderer.Result.Loaded -> r.composition
     }
     AndroidView(
         factory = { LottieAnimationView(it).apply { repeatCount = LottieDrawable.INFINITE } },

@@ -39,7 +39,10 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         val db = StickerDatabase.get(ctx)
         val started = System.currentTimeMillis()
         val trigger = inputData.getString(KEY_TRIGGER) ?: "manual"
-        if (inputData.getBoolean(KEY_RETRY_FAILED, false)) db.files().resetFailedAttempts()
+        if (inputData.getBoolean(KEY_RETRY_FAILED, false)) {
+            db.files().resetFailedAttempts()
+            db.stickers().resetProblemAttempts()
+        }
 
         setProgress(workDataOf(KEY_PHASE to "Listing files", KEY_DONE to 0, KEY_TOTAL to 0))
         val tree = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TREE, null)?.let(Uri::parse)
@@ -66,7 +69,12 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         plan.missing.chunked(500).forEach { db.files().markMissing(it, now) }
 
         val ingestor = StickerIngestor.create(ctx)
-        val total = plan.toProcess.size
+        val repairs = db.stickers().needsRepair(IndexPlanner.MAX_ATTEMPTS, limit = 2000)
+        val total = plan.toProcess.size + repairs.size
+        if (total > FOREGROUND_THRESHOLD) {
+            // Long run: a foreground task with a visible notification, so Android doesn't stop it.
+            runCatching { setForeground(IndexNotification.info(ctx, 0, total)) }
+        }
         val done = AtomicInteger(0)
         val counts = IntArray(IngestOutcome.entries.size)
         val gate = Semaphore(PARALLELISM)
@@ -75,10 +83,14 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                 async {
                     val outcome = gate.withPermit { ingestor.ingest(file, knownId, now) }
                     synchronized(counts) { counts[outcome.ordinal]++ }
-                    val d = done.incrementAndGet()
-                    if (d % 10 == 0 || d == total) {
-                        setProgress(workDataOf(KEY_PHASE to "Indexing", KEY_DONE to d, KEY_TOTAL to total))
-                    }
+                    progress(done.incrementAndGet(), total)
+                }
+            }.awaitAll()
+            // Finish what earlier runs couldn't: interrupted stickers and Lottie stickers to re-render.
+            repairs.map { s ->
+                async {
+                    gate.withPermit { ingestor.repair(s, db.stickers().liveUri(s.id), now) }
+                    progress(done.incrementAndGet(), total)
                 }
             }.awaitAll()
         }
@@ -95,7 +107,16 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         return Result.success()
     }
 
+    private suspend fun progress(d: Int, total: Int) {
+        if (d % 10 != 0 && d != total) return
+        setProgress(workDataOf(KEY_PHASE to "Indexing", KEY_DONE to d, KEY_TOTAL to total))
+        if (total > FOREGROUND_THRESHOLD) IndexNotification.update(applicationContext, d, total)
+    }
+
+    override suspend fun getForegroundInfo() = IndexNotification.info(applicationContext, 0, 0)
+
     companion object {
+        private const val FOREGROUND_THRESHOLD = 50
         const val UNIQUE = "sticker-index"
         const val PREFS = "m1"
         const val KEY_TREE = "saf_tree_uri"

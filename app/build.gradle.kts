@@ -14,8 +14,8 @@ android {
         // Android 16 only for now; see docs/04-roadmap.md "Android version support".
         minSdk = 36
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.0-m2"
+        versionCode = 4
+        versionName = "0.2.1-m2"
     }
 
     buildTypes {

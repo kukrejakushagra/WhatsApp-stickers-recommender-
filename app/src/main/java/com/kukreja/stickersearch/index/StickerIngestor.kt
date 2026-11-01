@@ -73,36 +73,63 @@ class StickerIngestor(
 
         // New sticker: derive previews. Failures mark the sticker, never the whole scan.
         val sticker = db.stickers().byId(stickerId) ?: return IngestOutcome.FAILED
-        val updated = try {
-            when (format.format) {
-                StickerFormat.LOTTIE_WAS -> {
-                    val r = frames.lottie(sha, bytes)
-                    if (r == null) {
-                        sticker.copy(status = StickerStatus.NEEDS_REVIEW, statusError = "not a Lottie archive we can read")
-                    } else {
-                        saveFrames(stickerId, r)
-                        sticker.copy(thumbnailPath = r.thumbnailPath, durationMs = r.durationMs,
-                            frameCount = r.frames.size, status = StickerStatus.PENDING)
-                    }
-                }
-                StickerFormat.WEBP_ANIMATED -> {
-                    val thumb = thumbnailer.ensureThumbnail(sha, bytes)
-                    val r = frames.webp(sha, bytes)
-                    if (r != null) saveFrames(stickerId, r)
-                    sticker.copy(
-                        thumbnailPath = thumb, durationMs = r?.durationMs,
-                        status = if (r == null) StickerStatus.NEEDS_REVIEW else StickerStatus.PENDING,
-                        statusError = if (r == null) "no frame could be decoded" else null,
-                    )
-                }
-                else -> sticker.copy(thumbnailPath = thumbnailer.ensureThumbnail(sha, bytes), status = StickerStatus.PENDING)
+        db.stickers().update(derivePreviews(sticker, bytes, format.format).copy(updatedAt = now))
+        return IngestOutcome.NEW_STICKER
+    }
+
+    /**
+     * Re-derives previews for a sticker an earlier scan left unfinished (stopped mid-way) or
+     * couldn't render (Lottie). Reads its first live file again; never touches user data.
+     */
+    suspend fun repair(sticker: StickerEntity, uri: String?, now: Long): Boolean {
+        val bytes = uri?.let { u ->
+            runCatching { context.contentResolver.openInputStream(Uri.parse(u))?.use { it.readBytes() } }.getOrNull()
+        }
+        val format = runCatching { StickerFormat.valueOf(sticker.format) }.getOrDefault(StickerFormat.UNKNOWN)
+        val updated = if (bytes == null) {
+            sticker.copy(status = StickerStatus.FAILED, statusError = "file couldn't be read again", attempts = sticker.attempts + 1)
+        } else {
+            derivePreviews(sticker, bytes, format).let { r ->
+                if (r.status == StickerStatus.PENDING) r else r.copy(attempts = sticker.attempts + 1)
             }
-        } catch (e: Throwable) {
-            if (e is OutOfMemoryError) System.gc()
-            sticker.copy(status = StickerStatus.FAILED, statusError = "${e.javaClass.simpleName}: ${e.message}", attempts = sticker.attempts + 1)
         }
         db.stickers().update(updated.copy(updatedAt = now))
-        return IngestOutcome.NEW_STICKER
+        return updated.status == StickerStatus.PENDING
+    }
+
+    private suspend fun derivePreviews(sticker: StickerEntity, bytes: ByteArray, format: StickerFormat): StickerEntity = try {
+        val sha = sticker.sha256
+        when (format) {
+            StickerFormat.LOTTIE_WAS -> {
+                val r = frames.lottie(sha, bytes)
+                if (r.frames.isEmpty()) {
+                    sticker.copy(status = StickerStatus.NEEDS_REVIEW, statusError = r.error ?: "no frames rendered")
+                } else {
+                    saveFrames(sticker.id, r)
+                    sticker.copy(thumbnailPath = r.thumbnailPath, durationMs = r.durationMs,
+                        frameCount = r.frames.size, status = StickerStatus.PENDING, statusError = null)
+                }
+            }
+            StickerFormat.WEBP_ANIMATED -> {
+                val r = frames.webp(sha, bytes)
+                if (r != null && r.frames.isNotEmpty()) {
+                    saveFrames(sticker.id, r)
+                    sticker.copy(thumbnailPath = r.thumbnailPath, durationMs = r.durationMs,
+                        status = StickerStatus.PENDING, statusError = null)
+                } else {
+                    // Keyframes failed: still show a still thumbnail from the platform decoder.
+                    sticker.copy(
+                        thumbnailPath = runCatching { thumbnailer.ensureThumbnail(sha, bytes) }.getOrNull(),
+                        durationMs = r?.durationMs, status = StickerStatus.NEEDS_REVIEW,
+                        statusError = r?.error ?: "not a readable animated WebP",
+                    )
+                }
+            }
+            else -> sticker.copy(thumbnailPath = thumbnailer.ensureThumbnail(sha, bytes), status = StickerStatus.PENDING, statusError = null)
+        }
+    } catch (e: Throwable) {
+        if (e is OutOfMemoryError) System.gc()
+        sticker.copy(status = StickerStatus.FAILED, statusError = "${e.javaClass.simpleName}: ${e.message}", attempts = sticker.attempts + 1)
     }
 
     private suspend fun saveFrames(stickerId: Long, r: FrameResult) {
@@ -118,7 +145,7 @@ class StickerIngestor(
         fun create(context: Context): StickerIngestor = StickerIngestor(
             context, StickerDatabase.get(context),
             Thumbnailer(File(context.filesDir, "thumbs")),
-            FrameExtractor(context, File(context.filesDir, "frames")),
+            FrameExtractor(context, File(context.filesDir, "frames"), File(context.filesDir, "thumbs")),
         )
     }
 }
