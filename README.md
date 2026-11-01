@@ -26,7 +26,7 @@ Download these four files in the phone's browser, then use **Settings › AI mod
 
 | Model | File to download | Size |
 |---|---|---|
-| Gemma 3n E2B (understanding) | `gemma-3n-E2B-it-int4.task` from huggingface.co/google/gemma-3n-E2B-it-litert-preview. You must sign in and accept Google's Gemma licence first | ~3.1 GB |
+| Gemma 3n E2B (understanding) | `gemma-3n-E2B-it-int4.task`: huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/gemma-3n-E2B-it-int4.task. It downloads directly once you're signed in and have accepted Google's Gemma licence on the model page | ~3.1 GB |
 | multilingual-e5-small (meaning search) | `onnx/model_int8.onnx` from huggingface.co/Xenova/multilingual-e5-small | ~118 MB |
 | SigLIP2 image | `onnx/vision_model_int8.onnx` from huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX | ~95 MB |
 | SigLIP2 text | `onnx/text_model_int8.onnx` from the same page | ~283 MB |

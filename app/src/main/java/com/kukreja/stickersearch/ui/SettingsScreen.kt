@@ -304,6 +304,9 @@ private fun ModelRow(step: Int, kind: ModelKind, state: UiState, actions: AppAct
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     KdsButton("Download", { actions.openUrl(kind.downloadUrl) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM,
                         icon = R.drawable.ic_kds_share)
+                    kind.licenceUrl?.let { url ->
+                        KdsButton("Accept licence", { actions.openUrl(url) }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+                    }
                     KdsButton(
                         if (importingThis) m.importing ?: "Importing" else "Import", { actions.importModel(kind) },
                         size = ButtonSize.SM, icon = R.drawable.ic_kds_folder,

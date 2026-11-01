@@ -14,17 +14,21 @@ enum class ModelKind(
     /** Name the file has when it's downloaded, so the person can recognise it. */
     val downloadName: String,
     val purpose: String,
-    /** Opened in the browser. Direct file links, except Gemma, whose page needs the licence accepted first. */
+    /** Direct file link, opened in the browser so the download starts at once. */
     val downloadUrl: String,
     val downloadNote: String,
     val approxMb: Int,
+    /** For gated models: the page where the licence is accepted once. */
+    val licenceUrl: String? = null,
 ) {
     GEMMA(
         "Gemma 3n E2B", "gemma-3n-E2B-it-int4.task", "gemma-3n-E2B-it-int4.task",
         "Understands each sticker: description, emotions, when to use it, and search phrases.",
-        "https://huggingface.co/google/gemma-3n-E2B-it-litert-preview",
-        "Sign in to Hugging Face and accept Google's Gemma licence on that page, then open Files and download gemma-3n-E2B-it-int4.task.",
+        "https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/gemma-3n-E2B-it-int4.task",
+        "Downloads straight away if you're signed in to Hugging Face in your browser and have accepted Google's Gemma licence. " +
+            "If you get an error page instead, tap Accept licence first.",
         3100,
+        licenceUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-preview",
     ),
     E5(
         "Meaning search", "e5-model_int8.onnx", "model_int8.onnx",
