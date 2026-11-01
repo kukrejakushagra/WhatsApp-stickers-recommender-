@@ -20,6 +20,7 @@ A native Android app (Kotlin + Jetpack Compose) that indexes the WhatsApp sticke
 | Related stickers (graph) | A local sticker graph with three link kinds: **story** (clips cut from one video, found when one clip's last keyframe matches the next one's first), **looks alike** (same character or art) and **topic** (a shared specific theme such as driving or cycling, confirmed by meaning). Search adds a "Related" section by expanding the top results through the graph; each sticker shows its story in order, its look-alikes and its topics |
 | Corrections | Edit any description, emotions, intents or tags. Your edits are stored separately and always win over the AI, including after re-analysis |
 | Sending | Two dynamic "Sticker Search" packs (static and animated) served through WhatsApp's documented third-party sticker-pack provider. The sticker you choose goes first, WhatsApp opens, and you send it from its picker as a real sticker. "Share as photo" is the fallback |
+| Your own packs | In Search, tap **Select**, pick up to 30 stickers (or **Top 30**), then **Create pack**. A mixed pick becomes a static pack and an animated pack, as WhatsApp requires, each with at least 3 stickers. WhatsApp's "Add" screen opens for each. From any sticker, **Add to pack** puts it in one of your packs. Settings › WhatsApp packs lets you rename packs, remove stickers, or delete a pack |
 | Background | Daily check while charging: scan, then visual pass, then annotation. Long runs show a progress notification (foreground media processing) |
 
 ## AI models (imported, not bundled)

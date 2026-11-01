@@ -4,6 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.kukreja.stickersearch.ui.kds.glass
 import androidx.compose.ui.graphics.asImageBitmap
 import com.kukreja.stickersearch.ui.kds.KdsIconButton
 import androidx.compose.foundation.horizontalScroll
@@ -57,9 +61,16 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     val s = state.search
     val assist = state.assist
     val ai = state.ai.counts
+    val selecting = state.selecting
+    val tap: (StickerRow) -> Unit = if (selecting) { r -> actions.toggleSelected(r.id) } else onOpen
+    // What "Top 30" picks from: the results currently on screen, best first.
+    val visible = if (assist.attachments.isNotEmpty() && assist.done) assist.suggestions + assist.found
+        else if (s.query.isNotBlank()) s.results + s.related.map { it.first } else emptyList()
+    var naming by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
         GridCells.Fixed(3), Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = BottomClearance),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = BottomClearance + if (selecting) 112.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -107,7 +118,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                     )
                 }
                 if (assist.attachments.isNotEmpty()) {
-                    AssistHeader(assist, actions)
+                    AssistHeader(assist, actions, selecting)
                 } else if (s.query.isBlank()) {
                     if (s.recent.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
@@ -143,7 +154,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                 } else {
                     Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (s.searching) SpinningLoader(14.dp, Kds.colors.mutedForeground)
-                        Text(
+                        Text(modifier = Modifier.weight(1f), text = 
                             when {
                                 s.searching -> "Searching"
                                 !s.searched -> ""
@@ -152,6 +163,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                             },
                             style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
                         )
+                        if (s.results.isNotEmpty() && !selecting) SelectButton(actions)
                     }
                     if (s.searched && !s.searching && s.results.isEmpty()) {
                         KdsEmptyState(R.drawable.ic_kds_search, "Nothing matched",
@@ -163,27 +175,62 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         if (assist.attachments.isNotEmpty() && assist.done) {
             if (assist.suggestions.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Suggested replies") }
-                items(assist.suggestions, key = { "s${it.id}" }) { r -> ResultTile(r, emptyList(), onOpen) }
+                items(assist.suggestions, key = { "s${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected) }
             }
             if (assist.found.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("In your images") }
-                items(assist.found, key = { "f${it.id}" }) { r -> ResultTile(r, emptyList(), onOpen) }
+                items(assist.found, key = { "f${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected) }
             }
         } else if (s.query.isNotBlank()) {
             items(s.results, key = { it.id }) { r ->
-                Column(Modifier.clickable { onOpen(r) }) {
-                    KdsMediaTile(onClick = { onOpen(r) }, label = tileLabel(r)) {
-                        Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
-                    }
-                    val why = s.matched[r.id].orEmpty().take(2).joinToString(" · ")
-                    Text(why.ifEmpty { " " }, style = Kds.type.labelXs, color = Kds.colors.mutedForeground, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 2.dp, top = 2.dp))
-                }
+                ResultTile(r, s.matched[r.id].orEmpty().ifEmpty { listOf(" ") }, tap, selecting, r.id in state.selected)
             }
             if (s.related.isNotEmpty() && !s.searching) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Related") }
-                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), onOpen) }
+                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), tap, selecting, r.id in state.selected) }
             }
+        }
+    }
+    if (selecting) {
+        SelectionBar(
+            count = state.selected.size,
+            onTop = { actions.selectTop(visible.map { it.id }) },
+            onCancel = actions.stopSelecting,
+            onCreate = { naming = true },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = BottomClearance - 8.dp),
+        )
+    }
+    }
+    if (naming) {
+        val default = s.query.trim().ifBlank { assist.queries.firstOrNull() ?: "My stickers" }.replaceFirstChar { it.uppercase() }
+        NameDialog(
+            title = "Create a sticker pack",
+            description = "${state.selected.size} sticker${if (state.selected.size == 1) "" else "s"} selected. Static and animated stickers become separate packs, as WhatsApp requires; each needs at least ${com.kukreja.stickersearch.share.StickerPacks.MIN}.",
+            initial = default, confirmLabel = "Create and add",
+            onConfirm = { name -> naming = false; actions.createPacks(name) }, onDismiss = { naming = false },
+        )
+    }
+}
+
+@Composable
+private fun SelectButton(actions: AppActions) =
+    KdsButton("Select", { actions.startSelecting(null) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM, icon = R.drawable.ic_kds_check)
+
+/** Floating glass bar while picking stickers for a pack. */
+@Composable
+private fun SelectionBar(count: Int, onTop: () -> Unit, onCancel: () -> Unit, onCreate: () -> Unit, modifier: Modifier) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(com.kukreja.stickersearch.ui.kds.theme.KdsRadius.x2l)
+    Column(
+        modifier.fillMaxWidth().glass(com.kukreja.stickersearch.ui.kds.Glass.FLOATING, shape, elevation = 12.dp).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("%d of %d selected".format(count, com.kukreja.stickersearch.share.StickerPacks.MAX),
+            style = Kds.type.bodyStrong.copy(fontFeatureSettings = "tnum"), color = Kds.colors.foreground)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            KdsButton("Top 30", onTop, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
+            KdsButton("Cancel", onCancel, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+            Spacer(Modifier.weight(1f))
+            KdsButton("Create pack", onCreate, size = ButtonSize.SM, icon = R.drawable.ic_kds_folder, enabled = count > 0)
         }
     }
 }
@@ -195,9 +242,9 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun ResultTile(r: StickerRow, why: List<String>, onOpen: (StickerRow) -> Unit) {
+private fun ResultTile(r: StickerRow, why: List<String>, onTap: (StickerRow) -> Unit, selecting: Boolean = false, picked: Boolean = false) {
     Column {
-        KdsMediaTile(onClick = { onOpen(r) }, label = tileLabel(r)) {
+        KdsMediaTile(onClick = { onTap(r) }, label = tileLabel(r), selectable = selecting, picked = picked) {
             Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
         }
         if (why.isNotEmpty()) {
@@ -209,7 +256,7 @@ private fun ResultTile(r: StickerRow, why: List<String>, onOpen: (StickerRow) ->
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AssistHeader(assist: AssistState, actions: AppActions) {
+private fun AssistHeader(assist: AssistState, actions: AppActions, selecting: Boolean) {
     if (!assist.done) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         assist.reading?.let { KdsCallout(it, CalloutTone.BRAND, title = "What's going on") }
@@ -223,7 +270,11 @@ private fun AssistHeader(assist: AssistState, actions: AppActions) {
             KdsEmptyState(R.drawable.ic_kds_search, "Nothing fitting yet",
                 "Add a few words about what you want to say, or let more stickers get described overnight.")
         } else {
-            Text("%d ms".format(assist.millis), style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("%d ms".format(assist.millis), style = Kds.type.caption.copy(fontFeatureSettings = "tnum"),
+                    color = Kds.colors.mutedForeground, modifier = Modifier.weight(1f))
+                if (!selecting) SelectButton(actions)
+            }
         }
     }
 }

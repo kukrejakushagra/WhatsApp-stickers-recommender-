@@ -74,7 +74,8 @@ internal fun LibraryScreen(state: UiState, onOpen: (StickerRow) -> Unit, goToSet
     Box(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
         GridCells.Fixed(3), Modifier.fillMaxSize(), state = gridState,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = BottomClearance),
+        // Extra end padding keeps the fast-scroll handle off the last tile column.
+        contentPadding = PaddingValues(start = 16.dp, end = 24.dp, bottom = BottomClearance),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {

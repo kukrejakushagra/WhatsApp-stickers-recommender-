@@ -53,6 +53,8 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
     val p = state.permissions
     var confirm by remember { mutableStateOf<String?>(null) }
     var showReport by remember { mutableStateOf(false) }
+    var openPack by remember { mutableStateOf<String?>(null) }
+    state.packs.firstOrNull { it.pack.id == openPack }?.let { info -> PackSheet(info, state, actions) { openPack = null } }
     val pickedStickersOnly = p.safHeld && p.safTreeId?.endsWith("WhatsApp Stickers") == true
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         KdsAppBar("Settings", subtitle = "Everything runs on this phone")
@@ -95,20 +97,24 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
             AiPanel(state, actions)
 
             // ---- WhatsApp ----
-            KdsSettingsGroup("WhatsApp", StickerPacks.Pack.entries.map { pack ->
+            KdsSettingsGroup("WhatsApp packs", state.packs.map { info ->
                 {
-                    val n = state.packCounts[pack] ?: 0
+                    val pack = info.pack
                     KdsSettingsRow(
-                        title = pack.title, icon = R.drawable.ic_kds_phone,
+                        title = pack.title, icon = if (pack.custom) R.drawable.ic_kds_folder else R.drawable.ic_kds_phone,
                         description = when {
-                            state.packsAdded[pack] == true -> "In WhatsApp's sticker picker · %d stickers, last sent first".format(n)
-                            n > 0 -> "%d stickers ready. Send one to add the pack to WhatsApp.".format(n)
+                            info.added -> "In WhatsApp's sticker picker · %d stickers%s".format(info.count, if (pack.custom) "" else ", last sent first")
+                            info.count >= StickerPacks.MIN -> "%d stickers ready to add to WhatsApp.".format(info.count)
+                            pack.custom -> "%d sticker%s. Add at least %d to send it to WhatsApp.".format(info.count, if (info.count == 1) "" else "s", StickerPacks.MIN)
                             else -> "Appears in WhatsApp after you send your first ${if (pack.animated) "animated " else ""}sticker."
                         },
-                        trailing = { if (state.packsAdded[pack] == true) KdsBadge("Added", BadgeTone.SOFT) },
+                        onClick = if (info.count > 0) ({ openPack = pack.id }) else null,
+                        trailing = { if (info.added) KdsBadge("Added", BadgeTone.SOFT) },
                     )
                 }
             })
+            Text("Make your own pack from a search: tap Select above the results, pick up to ${StickerPacks.MAX}, then Create pack.",
+                style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(horizontal = 4.dp))
 
             // ---- Background ----
             KdsSettingsGroup("Background", listOf(

@@ -6,7 +6,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
@@ -59,8 +62,9 @@ fun KdsFastScroller(
         derivedStateOf { (state.firstVisibleItemIndex.toFloat() / (itemCount - 1).coerceAtLeast(1)).coerceIn(0f, 1f) }
     }
     val fraction = if (dragging) dragFraction else scrolled
-    val handleH = 44.dp
-    BoxWithConstraints(modifier.fillMaxHeight().width(56.dp).padding(top = topInset, bottom = bottomInset)) {
+    val handleW by animateDpAsState(if (dragging) 22.dp else 16.dp, tween(KdsMotion.QUICK), label = "handleW")
+    val handleH by animateDpAsState(if (dragging) 76.dp else 64.dp, tween(KdsMotion.QUICK), label = "handleH")
+    BoxWithConstraints(modifier.fillMaxHeight().width(120.dp).padding(top = topInset, bottom = bottomInset)) {
         val density = LocalDensity.current
         val trackPx = with(density) { (maxHeight - handleH).toPx() }.coerceAtLeast(1f)
         fun jump(f: Float) {
@@ -69,8 +73,14 @@ fun KdsFastScroller(
             scope.launch { state.scrollToItem(target) }
         }
         val y = (fraction * trackPx).roundToInt()
+        // A visible track, so the scroller is easy to find before touching it.
         Box(
-            Modifier.align(Alignment.TopEnd).fillMaxHeight().width(28.dp)
+            Modifier.align(Alignment.TopEnd).padding(end = 12.dp).fillMaxHeight().width(4.dp)
+                .background(Kds.colors.glassTrack, CircleShape),
+        )
+        // 48dp touch strip: the Android minimum target width.
+        Box(
+            Modifier.align(Alignment.TopEnd).fillMaxHeight().width(48.dp)
                 .pointerInput(itemCount, trackPx) {
                     detectVerticalDragGestures(
                         onDragStart = { o -> dragging = true; jump((o.y - handleH.toPx() / 2) / trackPx) },
@@ -81,22 +91,33 @@ fun KdsFastScroller(
                 }
                 .semantics { contentDescription = "Fast scroll" },
         ) {
-            Box(
-                Modifier.align(Alignment.TopEnd).offset { IntOffset(0, y) }.padding(end = 4.dp)
-                    .width(if (dragging) 8.dp else 6.dp).height(handleH)
+            Column(
+                Modifier.align(Alignment.TopEnd).offset { IntOffset(0, y) }.padding(end = 14.dp - handleW / 2) // centred on the track
+                    .width(handleW).height(handleH)
                     .glass(if (dragging) Glass.LENS else Glass.CONTROL, CircleShape, elevation = if (dragging) 6.dp else 2.dp),
-            )
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // Grip lines.
+                repeat(3) {
+                    Box(Modifier.width(handleW * 0.45f).height(2.dp)
+                        .background(if (dragging) Kds.colors.foreground else Kds.colors.mutedForeground, CircleShape))
+                }
+            }
         }
         AnimatedVisibility(
             visible = dragging,
             enter = fadeIn(tween(KdsMotion.QUICK)), exit = fadeOut(tween(KdsMotion.STANDARD)),
-            modifier = Modifier.align(Alignment.TopEnd).offset { IntOffset(-with(density) { 36.dp.roundToPx() }, y) },
+            // Beside the handle, vertically centred on it, clear of the thumb.
+            modifier = Modifier.align(Alignment.TopEnd).offset {
+                IntOffset(-with(density) { 56.dp.roundToPx() }, y + with(density) { (handleH / 2 - 21.dp).roundToPx() })
+            },
         ) {
             val text = label((dragFraction * (itemCount - 1)).roundToInt()) ?: "${(dragFraction * 100).roundToInt()}%"
             Text(
-                text, style = Kds.type.chip.copy(fontFeatureSettings = "tnum"), color = Kds.colors.background,
-                modifier = Modifier.background(Kds.colors.foreground.copy(alpha = 0.94f), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                text, style = Kds.type.heading.copy(fontFeatureSettings = "tnum"), color = Kds.colors.background,
+                modifier = Modifier.background(Kds.colors.foreground.copy(alpha = 0.94f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             )
         }
     }

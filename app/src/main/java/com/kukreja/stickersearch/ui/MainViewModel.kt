@@ -124,6 +124,8 @@ data class AssistState(
     val done: Boolean = false,
 )
 
+data class PackInfo(val pack: StickerPacks.Pack, val count: Int, val added: Boolean, val stickers: List<String> = emptyList())
+
 data class Storage(val models: Long = 0, val previews: Long = 0, val database: Long = 0)
 
 data class UiState(
@@ -140,8 +142,11 @@ data class UiState(
     /** One-shot: images arrived from another app, so Search should come to the front. */
     val openSearch: Boolean = false,
     val graph: Map<com.kukreja.stickersearch.data.EdgeType, Int> = emptyMap(),
-    val packsAdded: Map<StickerPacks.Pack, Boolean> = emptyMap(),
-    val packCounts: Map<StickerPacks.Pack, Int> = emptyMap(),
+    /** Every pack served to WhatsApp, with its size and whether WhatsApp has added it. */
+    val packs: List<PackInfo> = emptyList(),
+    /** Search results being picked for a new pack. */
+    val selecting: Boolean = false,
+    val selected: Set<Long> = emptySet(),
     val batteryUnrestricted: Boolean = false,
     val storage: Storage = Storage(),
     /** Optional diagnostic scan (Settings), separate from the index. */
@@ -169,6 +174,8 @@ data class StickerDetails(
     val looks: List<StickerRow> = emptyList(),
     val topics: List<Pair<String, List<StickerRow>>> = emptyList(),
 )
+
+fun StickerRow.isLottieRow() = format == StickerFormat.LOTTIE_WAS.name
 
 fun StickerRow.formatEnum(): StickerFormat = runCatching { StickerFormat.valueOf(format) }.getOrDefault(StickerFormat.UNKNOWN)
 
@@ -278,11 +285,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshPermissions() {
         _state.update { it.copy(permissions = readPermissions(), eventCount = events.all().length(), batteryUnrestricted = batteryUnrestricted()) }
         refreshModels()
-        viewModelScope.launch(Dispatchers.IO) {
-            val added = StickerPacks.Pack.entries.associateWith { StickerPacks.isAdded(ctx, it) }
-            val counts = StickerPacks.Pack.entries.associateWith { StickerPacks.entries(ctx, it).size }
-            _state.update { it.copy(packsAdded = added, packCounts = counts, storage = storage()) }
-        }
+        viewModelScope.launch(Dispatchers.IO) { refreshPacks(); _state.update { it.copy(storage = storage()) } }
     }
 
     private fun readPermissions(): Permissions {
@@ -498,6 +501,104 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------------- custom packs ----------------
+
+    fun startSelecting(preselect: Long? = null) =
+        _state.update { it.copy(selecting = true, selected = listOfNotNull(preselect).toSet()) }
+
+    fun stopSelecting() = _state.update { it.copy(selecting = false, selected = emptySet()) }
+
+    fun toggleSelected(id: Long) = _state.update { s ->
+        val sel = if (id in s.selected) s.selected - id else s.selected + id
+        if (sel.size > StickerPacks.MAX) {
+            toast("A pack holds up to ${StickerPacks.MAX} stickers. Make another pack for more.")
+            s
+        } else s.copy(selected = sel)
+    }
+
+    /** Selects the top results, up to WhatsApp's 30-per-pack limit. */
+    fun selectTop(ids: List<Long>) = _state.update { s ->
+        s.copy(selecting = true, selected = (s.selected + ids).toList().take(StickerPacks.MAX).toSet())
+    }
+
+    private suspend fun packItems(rows: List<StickerRow>): List<Triple<String, ByteArray, String>> {
+        val out = mutableListOf<Triple<String, ByteArray, String>>()
+        for (r in rows) {
+            val bytes = r.primaryUri?.let { u -> runCatching { ctx.contentResolver.openInputStream(Uri.parse(u))?.use { it.readBytes() } }.getOrNull() }
+            if (bytes != null) out += Triple(r.sha256, bytes, repo.effective(r.id)?.emoji.orEmpty())
+        }
+        return out
+    }
+
+    /**
+     * Makes WhatsApp-ready packs from the selected stickers (split into static and animated, as WhatsApp
+     * requires) and opens WhatsApp's "Add" screen for each in turn.
+     */
+    fun createPacksFromSelection(name: String, askToAdd: (Intent) -> Unit) {
+        val st = _state.value
+        val byId = st.stickers.associateBy { it.id }
+        val rows = st.selected.mapNotNull { byId[it] }
+        if (rows.isEmpty()) return toast("Select some stickers first.")
+        viewModelScope.launch(Dispatchers.IO) {
+            val plan = com.kukreja.stickersearch.share.PackPlanner.plan(name,
+                rows.map { com.kukreja.stickersearch.share.PackPlanner.Item(it.id, it.isAnimated, it.isLottieRow()) })
+            val made = mutableListOf<StickerPacks.Pack>()
+            val notes = plan.notes.toMutableList()
+            for (pl in plan.packs) {
+                val pack = StickerPacks.createPack(ctx, pl.title, pl.animated)
+                val r = StickerPacks.addMany(ctx, pack, packItems(pl.ids.mapNotNull { byId[it] }))
+                if (r.skipped.isNotEmpty()) notes += "${r.skipped.size} couldn't be added: ${r.skipped.first()}"
+                if (StickerPacks.entries(ctx, pack).size >= StickerPacks.MIN) made += pack
+                else { notes += "“${pack.title}” ended up with fewer than ${StickerPacks.MIN} usable stickers, so it wasn't created."; StickerPacks.deletePack(ctx, pack) }
+            }
+            refreshPacks()
+            withContext(Dispatchers.Main) {
+                stopSelecting()
+                if (made.isEmpty()) return@withContext toast(notes.joinToString(" ").ifBlank { "No pack could be made from these stickers." })
+                addQueue.clear(); addQueue.addAll(made.drop(1)); queuedAsk = askToAdd
+                addPackToWhatsApp(made.first(), askToAdd)
+                toast((listOf(if (made.size == 1) "Pack “${made[0].title}” made. Tap Add in WhatsApp."
+                    else "${made.size} packs made. WhatsApp asks about each one.") + notes).joinToString(" "))
+            }
+        }
+    }
+
+    /** Adds one sticker to a pack of the user's (or to a new one named [newName]). */
+    fun addToPack(row: StickerRow, pack: StickerPacks.Pack?, newName: String?) {
+        if (row.isLottieRow()) return toast("WhatsApp packs only take WebP, so Lottie stickers can't be added.")
+        viewModelScope.launch(Dispatchers.IO) {
+            val target = pack ?: StickerPacks.createPack(ctx, newName ?: "My stickers", row.isAnimated)
+            if (target.animated != row.isAnimated) {
+                return@launch toast("“${target.title}” is for ${if (target.animated) "animated" else "static"} stickers; WhatsApp can't mix the two.")
+            }
+            val r = StickerPacks.addMany(ctx, target, packItems(listOf(row)))
+            refreshPacks()
+            val n = StickerPacks.entries(ctx, target).size
+            toast(when {
+                r.full > 0 -> "“${target.title}” is full (${StickerPacks.MAX} stickers)."
+                r.skipped.isNotEmpty() -> r.skipped.first()
+                r.added == 0 -> "Already in “${target.title}”."
+                n < StickerPacks.MIN -> "Added to “${target.title}” ($n). Add ${StickerPacks.MIN - n} more before it can go into WhatsApp."
+                else -> "Added to “${target.title}” ($n stickers)."
+            })
+        }
+    }
+
+    fun removeFromPack(pack: StickerPacks.Pack, sha: String) {
+        viewModelScope.launch(Dispatchers.IO) { StickerPacks.remove(ctx, pack, sha); refreshPacks() }
+    }
+
+    fun deletePack(pack: StickerPacks.Pack) {
+        viewModelScope.launch(Dispatchers.IO) {
+            StickerPacks.deletePack(ctx, pack); refreshPacks()
+            toast("“${pack.title}” deleted. If it was in WhatsApp, it disappears there too.")
+        }
+    }
+
+    fun renamePack(pack: StickerPacks.Pack, title: String) {
+        viewModelScope.launch(Dispatchers.IO) { StickerPacks.renamePack(ctx, pack, title); refreshPacks() }
+    }
+
     // ---------------- corrections ----------------
 
     fun saveCorrection(id: Long, c: Correction) {
@@ -573,11 +674,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private var pendingPack: StickerPacks.Pack? = null
+    /** Packs still to show WhatsApp's "Add" screen for, after the current one (bulk pack creation). */
+    private val addQueue = ArrayDeque<StickerPacks.Pack>()
+    private var queuedAsk: ((Intent) -> Unit)? = null
+
+    private fun refreshPacks() {
+        val list = StickerPacks.all(ctx).map { p ->
+            val e = StickerPacks.entries(ctx, p)
+            PackInfo(p, e.size, StickerPacks.isAdded(ctx, p), e.map { it.sha })
+        }
+        _state.update { it.copy(packs = list) }
+    }
+
+    /** Opens WhatsApp's "Add sticker pack" screen for [pack] (it must hold 3+ stickers). */
+    fun addPackToWhatsApp(pack: StickerPacks.Pack, askToAdd: (Intent) -> Unit) {
+        val n = StickerPacks.entries(ctx, pack).size
+        if (n < StickerPacks.MIN) return toast("“${pack.title}” has $n stickers; WhatsApp needs at least ${StickerPacks.MIN}.")
+        pendingPack = pack
+        try { askToAdd(StickerPacks.addToWhatsAppIntent(ctx, pack)) } catch (e: ActivityNotFoundException) {
+            pendingPack = null
+            toast("WhatsApp didn't open. Check it is installed, then try again.")
+        }
+    }
 
     /** WhatsApp's answer to "add this pack": OK, or cancelled with a validation_error explaining why. */
     fun onAddPackResult(resultCode: Int, data: Intent?) {
         val pack = pendingPack
         pendingPack = null
+        // Bulk creation: show WhatsApp the next pack once it has answered about this one.
+        addQueue.removeFirstOrNull()?.let { next -> queuedAsk?.let { ask -> addPackToWhatsApp(next, ask) } }
+        if (addQueue.isEmpty() && pendingPack == null) queuedAsk = null
         val error = data?.getStringExtra("validation_error")
         events.add("pack_send", mapOf(
             "step" to "whatsapp_result", "pack" to pack?.id, "resultCode" to resultCode, "validationError" to error,
@@ -586,6 +712,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val added = pack != null && withContext(Dispatchers.IO) { StickerPacks.isAdded(ctx, pack) }
             toast(
                 when {
+                    (resultCode == android.app.Activity.RESULT_OK || added) && pack?.custom == true ->
+                        "“${pack.title}” is in WhatsApp's sticker picker."
                     resultCode == android.app.Activity.RESULT_OK || added ->
                         "Pack added. In WhatsApp, open a chat and the sticker picker; your sticker is first in ${pack?.title ?: "Sticker Search"}."
                     error != null -> "WhatsApp didn't add the pack: $error"
@@ -682,7 +810,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .put("lastAnnotationMs", st.getLong(AiWorker.KEY_LAST_ANNOTATION_MS, 0))
             .put("lastSearchMs", s.search.millis)
             .put("searchIndexSize", engine.size)
-            .put("packs", JSONObject(StickerPacks.Pack.entries.associate {
+            .put("packs", JSONObject(StickerPacks.all(ctx).associate {
                 it.id to "${StickerPacks.entries(ctx, it).size} stickers, added=${StickerPacks.isAdded(ctx, it)}"
             } as Map<*, *>))
             .put("batteryUnrestricted", batteryUnrestricted())

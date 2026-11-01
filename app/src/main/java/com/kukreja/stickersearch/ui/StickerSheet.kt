@@ -109,10 +109,15 @@ private fun pretty(label: String) = label.replace('_', ' ')
 internal fun StickerSheet(
     s: StickerRow,
     actions: AppActions,
-    message: String?,
+    state: UiState,
     onOpen: (StickerRow) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val message = state.message
+    var choosingPack by remember { mutableStateOf(false) }
+    if (choosingPack) {
+        AddToPackDialog(s, state, state.search.query.trim().ifBlank { "My stickers" }, actions) { choosingPack = false }
+    }
     var reload by remember { mutableIntStateOf(0) }
     val details by produceState<StickerDetails?>(null, s.id, reload, s.status) { value = actions.details(s.id) }
     var editing by remember { mutableStateOf(false) }
@@ -130,8 +135,12 @@ internal fun StickerSheet(
                 KdsToastHost(message, actions.messageShown, Modifier.align(Alignment.CenterHorizontally))
                 KdsButton("Send in WhatsApp", { actions.sendViaWhatsApp(s) }, size = ButtonSize.LG, block = true,
                     icon = R.drawable.ic_kds_phone, enabled = s.primaryUri != null && !s.isLottie())
-                KdsButton("Share as photo", { actions.send(s, StickerSharer.Mode.SYSTEM_SHEET) },
-                    variant = ButtonVariant.GHOST, block = true, icon = R.drawable.ic_kds_share, enabled = s.primaryUri != null)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    KdsButton("Add to pack", { choosingPack = true }, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                        icon = R.drawable.ic_kds_folder, enabled = s.primaryUri != null && !s.isLottie())
+                    KdsButton("Share as photo", { actions.send(s, StickerSharer.Mode.SYSTEM_SHEET) },
+                        variant = ButtonVariant.GHOST, modifier = Modifier.weight(1f), icon = R.drawable.ic_kds_share, enabled = s.primaryUri != null)
+                }
             }
         },
     ) {

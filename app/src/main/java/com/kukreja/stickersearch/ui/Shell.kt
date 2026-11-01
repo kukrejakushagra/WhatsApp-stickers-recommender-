@@ -68,6 +68,17 @@ data class AppActions(
     val removeAttachment: (android.net.Uri) -> Unit = {},
     val runAssist: () -> Unit = {},
     val clearAssist: () -> Unit = {},
+    // Custom sticker packs
+    val startSelecting: (Long?) -> Unit = {},
+    val stopSelecting: () -> Unit = {},
+    val toggleSelected: (Long) -> Unit = {},
+    val selectTop: (List<Long>) -> Unit = {},
+    val createPacks: (String) -> Unit = {},
+    val addToPack: (StickerRow, com.kukreja.stickersearch.share.StickerPacks.Pack?, String?) -> Unit = { _, _, _ -> },
+    val addPackToWhatsApp: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
+    val removeFromPack: (com.kukreja.stickersearch.share.StickerPacks.Pack, String) -> Unit = { _, _ -> },
+    val deletePack: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
+    val renamePack: (com.kukreja.stickersearch.share.StickerPacks.Pack, String) -> Unit = { _, _ -> },
 )
 
 @Composable
@@ -132,6 +143,16 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             removeAttachment = vm::removeAttachment,
             runAssist = vm::runAssist,
             clearAssist = vm::clearAssist,
+            startSelecting = vm::startSelecting,
+            stopSelecting = vm::stopSelecting,
+            toggleSelected = vm::toggleSelected,
+            selectTop = vm::selectTop,
+            createPacks = { name -> vm.createPacksFromSelection(name) { intent -> addPack.launch(intent) } },
+            addToPack = vm::addToPack,
+            addPackToWhatsApp = { pack -> vm.addPackToWhatsApp(pack) { intent -> addPack.launch(intent) } },
+            removeFromPack = vm::removeFromPack,
+            deletePack = vm::deletePack,
+            renamePack = vm::renamePack,
         )
     }
     AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)
@@ -174,7 +195,7 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
     selected?.let { s ->
         // Keep the sheet in step with the live row (status, thumbnail) while it's open.
         val live = state.stickers.firstOrNull { it.id == s.id } ?: s
-        StickerSheet(live, actions, state.message, onOpen = { selected = it }) { selected = null }
+        StickerSheet(live, actions, state, onOpen = { selected = it }) { selected = null }
     }
 }
 

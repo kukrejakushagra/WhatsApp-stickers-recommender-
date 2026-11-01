@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -240,14 +241,29 @@ fun KdsStatCard(value: String, label: String, modifier: Modifier = Modifier, val
     }
 }
 
-/** Square thumbnail tile (radius-md) with an optional white micro label on media-overlay. */
+/**
+ * Square thumbnail tile (radius-md) with an optional white micro label on media-overlay.
+ * When [selectable], a 24px dot sits top-right (white ring off, brand with a tick on), and a picked
+ * tile shrinks to 84% with radius-xl.
+ */
 @Composable
-fun KdsMediaTile(onClick: () -> Unit, modifier: Modifier = Modifier, label: String? = null, content: @Composable BoxScope.() -> Unit) {
+fun KdsMediaTile(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    selectable: Boolean = false,
+    picked: Boolean = false,
+    content: @Composable BoxScope.() -> Unit,
+) {
     val c = Kds.colors
-    val shape = RoundedCornerShape(KdsRadius.md)
+    val scale by animateFloatAsState(if (selectable && picked) 0.84f else 1f, tween(KdsMotion.STANDARD, easing = KdsMotion.Standard), label = "pick")
+    val shape = RoundedCornerShape(if (selectable && picked) KdsRadius.xl else KdsRadius.md)
+    Box(modifier.aspectRatio(1f)) {
     Box(
-        modifier.aspectRatio(1f).clip(shape).background(c.glassClear).border(1.dp, c.glassBorder, shape)
-            .clickable(role = Role.Image, onClick = onClick),
+        Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(shape).background(c.glassClear).border(if (picked) 2.dp else 1.dp, if (picked) c.brand else c.glassBorder, shape)
+            .clickable(role = if (selectable) Role.Checkbox else Role.Image, onClick = onClick)
+            .semantics { if (selectable) selected = picked },
     ) {
         Box(Modifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.Center, content = content)
         label?.let {
@@ -257,6 +273,15 @@ fun KdsMediaTile(onClick: () -> Unit, modifier: Modifier = Modifier, label: Stri
                     .background(c.mediaOverlay, RoundedCornerShape(KdsRadius.xs)).padding(horizontal = 4.dp),
             )
         }
+    }
+    if (selectable) {
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp)
+                .then(if (picked) Modifier.background(c.brand, CircleShape) else Modifier.background(c.mediaOverlay.copy(alpha = 0.25f), CircleShape))
+                .border(2.dp, if (picked) c.brand else Color.White, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { if (picked) KdsIcon(R.drawable.ic_kds_check, 14.dp, c.brandForeground) }
+    }
     }
 }
 
