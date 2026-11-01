@@ -9,30 +9,43 @@ import java.io.File
 /** The four model files the app uses. All run on the phone; none are bundled in the APK. */
 enum class ModelKind(
     val title: String,
+    /** Name the app stores it under. */
     val fileName: String,
+    /** Name the file has when it's downloaded, so the person can recognise it. */
+    val downloadName: String,
     val purpose: String,
-    val downloadPage: String,
+    /** Opened in the browser. Direct file links, except Gemma, whose page needs the licence accepted first. */
+    val downloadUrl: String,
+    val downloadNote: String,
     val approxMb: Int,
 ) {
     GEMMA(
-        "Gemma 3n E2B (understanding)", "gemma-3n-E2B-it-int4.task",
-        "Writes a description, emotions, intents, tags and search phrases for each sticker.",
-        "huggingface.co/google/gemma-3n-E2B-it-litert-preview", 3100,
+        "Gemma 3n E2B", "gemma-3n-E2B-it-int4.task", "gemma-3n-E2B-it-int4.task",
+        "Understands each sticker: description, emotions, when to use it, and search phrases.",
+        "https://huggingface.co/google/gemma-3n-E2B-it-litert-preview",
+        "Sign in to Hugging Face and accept Google's Gemma licence on that page, then open Files and download gemma-3n-E2B-it-int4.task.",
+        3100,
     ),
     E5(
-        "multilingual-e5-small (meaning search)", "e5-model_int8.onnx",
+        "Meaning search", "e5-model_int8.onnx", "model_int8.onnx",
         "Matches what you type with the descriptions, in English, Hindi and Hinglish.",
-        "huggingface.co/Xenova/multilingual-e5-small → onnx/model_int8.onnx", 118,
+        "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/onnx/model_int8.onnx",
+        "Downloads straight away as model_int8.onnx.",
+        118,
     ),
     SIGLIP_VISION(
-        "SigLIP2 image (visual search)", "siglip2-vision_model_int8.onnx",
-        "Gives every sticker a visual fingerprint on the first night.",
-        "huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX → onnx/vision_model_int8.onnx", 95,
+        "Visual search, images", "siglip2-vision_model_int8.onnx", "vision_model_int8.onnx",
+        "Gives every sticker a visual fingerprint on the first day.",
+        "https://huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX/resolve/main/onnx/vision_model_int8.onnx",
+        "Downloads straight away as vision_model_int8.onnx.",
+        95,
     ),
     SIGLIP_TEXT(
-        "SigLIP2 text (visual search)", "siglip2-text_model_int8.onnx",
+        "Visual search, text", "siglip2-text_model_int8.onnx", "text_model_int8.onnx",
         "Turns what you type into the same visual space.",
-        "huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX → onnx/text_model_int8.onnx", 283,
+        "https://huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX/resolve/main/onnx/text_model_int8.onnx",
+        "Downloads straight away as text_model_int8.onnx.",
+        283,
     ),
 }
 

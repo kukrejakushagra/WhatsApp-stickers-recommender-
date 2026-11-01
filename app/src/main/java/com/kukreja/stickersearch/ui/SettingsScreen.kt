@@ -1,6 +1,12 @@
 package com.kukreja.stickersearch.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import com.kukreja.stickersearch.ui.kds.KdsIcon
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -247,33 +253,65 @@ private fun ScanPanel(state: UiState, actions: AppActions) {
 @Composable
 private fun ModelsGroup(state: UiState, actions: AppActions, onRemove: (ModelKind) -> Unit) {
     val m = state.models
-    val missing = ModelKind.entries.filter { !m.has(it) }
+    val ready = m.readyCount
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        KdsSettingsGroup("AI models", ModelKind.entries.map { kind ->
-            {
-                KdsSettingsRow(
-                    title = kind.title, icon = if (kind == ModelKind.GEMMA) R.drawable.ic_kds_spark else R.drawable.ic_kds_search,
-                    description = if (m.has(kind)) "${kind.purpose} ${mb(m.present[kind] ?: 0)}." else "${kind.purpose} About ${kind.approxMb} MB.",
-                    onClick = if (m.has(kind)) ({ onRemove(kind) }) else null,
-                    trailing = { if (m.has(kind)) KdsBadge("Ready", BadgeTone.SOFT) else KdsBadge("Missing", BadgeTone.SECONDARY) },
-                )
-            }
-        })
-        if (missing.isNotEmpty()) {
-            KdsCallout(
-                buildString {
-                    append("Download these in your phone's browser, then tap Import and pick them (several at once is fine):\n")
-                    missing.forEach { append("• ").append(it.downloadPage).append('\n') }
-                    if (ModelKind.GEMMA in missing) append("Gemma asks you to sign in to Hugging Face and accept Google's licence first. ")
-                    append("The app has no internet access; files only come in through this picker.")
-                },
-                CalloutTone.BRAND, title = "Get the models",
+        KdsSettingsGroup(
+            if (ready == ModelKind.entries.size) "AI models · all ready" else "AI models · $ready of ${ModelKind.entries.size} ready",
+            ModelKind.entries.mapIndexed { i, kind -> { ModelRow(i + 1, kind, state, actions, onRemove) } },
+        )
+        if (ready < ModelKind.entries.size) {
+            KdsProgress(ready.toFloat() / ModelKind.entries.size)
+            Text(
+                "For each model: tap Download, which opens your browser. When the file has finished downloading, tap Import " +
+                    "next to it and pick the file from Downloads. The app itself never goes online.",
+                style = Kds.type.caption, color = Kds.colors.mutedForeground,
             )
+            KdsButton("Import several files at once", actions.importModels, variant = ButtonVariant.GHOST, size = ButtonSize.SM,
+                icon = R.drawable.ic_kds_folder, enabled = m.importing == null)
         }
-        m.importing?.let { KdsCallout(it, CalloutTone.NEUTRAL, title = "Importing model") }
-        KdsButton(if (m.importing != null) "Importing" else "Import model files", actions.importModels,
-            variant = if (missing.isEmpty()) ButtonVariant.OUTLINE else ButtonVariant.PRIMARY, block = true,
-            loading = m.importing != null, icon = R.drawable.ic_kds_folder)
+    }
+}
+
+@Composable
+private fun ModelRow(step: Int, kind: ModelKind, state: UiState, actions: AppActions, onRemove: (ModelKind) -> Unit) {
+    val m = state.models
+    val c = Kds.colors
+    val ready = m.has(kind)
+    val importingThis = m.importing != null && m.importingKind == kind
+    Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        // Step marker: a number while it's still to do, a tick once imported.
+        Box(
+            Modifier.size(28.dp).background(if (ready) c.brandSoft else c.secondary, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (ready) KdsIcon(R.drawable.ic_kds_check, 14.dp, c.brand)
+            else Text("$step", style = Kds.type.chip, color = c.mutedForeground)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(kind.title, style = Kds.type.bodyStrong, color = c.foreground, modifier = Modifier.weight(1f, fill = false))
+                if (ready) KdsBadge("Ready", BadgeTone.SOFT) else KdsBadge("Not imported", BadgeTone.SECONDARY)
+            }
+            Text(kind.purpose, style = Kds.type.caption, color = c.mutedForeground)
+            if (ready) {
+                Text("Imported · ${mb(m.present[kind] ?: 0)}", style = Kds.type.caption, color = c.mutedForeground)
+                KdsButton("Remove", { onRemove(kind) }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+            } else {
+                Text("File: ${kind.downloadName} · about ${if (kind.approxMb >= 1000) "%.1f GB".format(kind.approxMb / 1000.0) else "${kind.approxMb} MB"}",
+                    style = Kds.type.mono, color = c.foreground)
+                Text(kind.downloadNote, style = Kds.type.caption, color = c.mutedForeground)
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    KdsButton("Download", { actions.openUrl(kind.downloadUrl) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM,
+                        icon = R.drawable.ic_kds_share)
+                    KdsButton(
+                        if (importingThis) m.importing ?: "Importing" else "Import", { actions.importModel(kind) },
+                        size = ButtonSize.SM, icon = R.drawable.ic_kds_folder,
+                        loading = importingThis, enabled = m.importing == null,
+                    )
+                }
+            }
+        }
     }
 }
 

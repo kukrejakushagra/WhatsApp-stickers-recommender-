@@ -89,7 +89,10 @@ data class AiState(
 data class ModelsState(
     val present: Map<ModelKind, Long> = emptyMap(),
     val importing: String? = null,
+    /** The row whose Import button started the current import, if any. */
+    val importingKind: ModelKind? = null,
 ) {
+    val readyCount get() = ModelKind.entries.count { has(it) }
     fun has(k: ModelKind) = (present[k] ?: 0L) > 0L
     val searchReady get() = has(ModelKind.E5) || has(ModelKind.SIGLIP_TEXT)
 }
@@ -284,8 +287,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { s -> s.copy(models = s.models.copy(present = ModelKind.entries.associateWith { models.sizeBytes(it) })) }
     }
 
-    fun importModels(uris: List<Uri>) {
+    /** [expected]: the row the user imported from; the file is still identified by its contents. */
+    fun importModels(uris: List<Uri>, expected: ModelKind? = null) {
         if (uris.isEmpty()) return
+        _state.update { it.copy(models = it.models.copy(importing = "Starting", importingKind = expected)) }
         viewModelScope.launch(Dispatchers.IO) {
             val results = uris.map { uri ->
                 models.import(uri) { copied, total ->
@@ -293,15 +298,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { it.copy(models = it.models.copy(importing = label)) }
                 }
             }
-            _state.update { it.copy(models = it.models.copy(importing = null)) }
+            _state.update { it.copy(models = it.models.copy(importing = null, importingKind = null)) }
             refreshModels()
             engine.close()
             engine.warmUp()
             val ok = results.mapNotNull { it.kind }
             val bad = results.filter { it.kind == null }
+            val left = ModelKind.entries.count { !models.has(it) }
+            val leftText = if (left == 0) "All 4 models are ready." else "$left of 4 still to import."
             toast(
                 when {
-                    bad.isEmpty() -> if (ok.size == 1) "Imported ${ok[0].title}" else "Imported ${ok.size} models"
+                    expected != null && ok.size == 1 && ok[0] != expected ->
+                        "That file is ${ok[0].title}, not ${expected.title}, so it was imported there. $leftText"
+                    bad.isEmpty() -> (if (ok.size == 1) "Imported ${ok[0].title}. " else "Imported ${ok.size} models. ") + leftText
                     ok.isEmpty() -> "${bad.first().name}: ${bad.first().error}"
                     else -> "Imported ${ok.size}; ${bad.size} not recognised (${bad.first().name})"
                 },

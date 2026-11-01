@@ -51,6 +51,10 @@ data class AppActions(
     val reportJson: suspend () -> String = { "{}" },
     val details: suspend (Long) -> StickerDetails = { StickerDetails(emptyList(), emptyList()) },
     val importModels: () -> Unit = {},
+    /** Import one file from that model's row. */
+    val importModel: (ModelKind) -> Unit = {},
+    /** Opens a download page in the browser (the app itself has no internet access). */
+    val openUrl: (String) -> Unit = {},
     val deleteModel: (ModelKind) -> Unit = {},
     val runAiNow: () -> Unit = {},
     val onQueryChange: (String) -> Unit = {},
@@ -68,6 +72,10 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     val context = LocalContext.current
     val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { vm.onTreePicked(it) }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { vm.importModels(it) }
+    val expected = remember { arrayOfNulls<ModelKind>(1) }
+    val singleModelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importModels(listOf(uri), expected[0])
+    }
     // Asked on the first scan: lets the long-task progress notification show. Denying is fine.
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshPermissions() }
@@ -91,6 +99,13 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             reportJson = vm::reportJson,
             details = vm::details,
             importModels = { modelPicker.launch(arrayOf("*/*")) },
+            importModel = { kind -> expected[0] = kind; singleModelPicker.launch(arrayOf("*/*")) },
+            openUrl = { url ->
+                runCatching {
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            },
             deleteModel = vm::deleteModel,
             runAiNow = { askNotifications(); vm.runAiNow() },
             onQueryChange = vm::onQueryChange,
