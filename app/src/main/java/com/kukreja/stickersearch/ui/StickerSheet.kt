@@ -63,6 +63,7 @@ import com.kukreja.stickersearch.ui.kds.KdsIcon
 import com.kukreja.stickersearch.ui.kds.KdsKeyValue
 import com.kukreja.stickersearch.ui.kds.KdsSheet
 import com.kukreja.stickersearch.ui.kds.KdsTextField
+import com.kukreja.stickersearch.ui.kds.KdsToastHost
 import com.kukreja.stickersearch.ui.kds.theme.Kds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -104,7 +105,7 @@ private fun pretty(label: String) = label.replace('_', ' ')
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun StickerSheet(s: StickerRow, actions: AppActions, onDismiss: () -> Unit) {
+internal fun StickerSheet(s: StickerRow, actions: AppActions, message: String?, onDismiss: () -> Unit) {
     var reload by remember { mutableIntStateOf(0) }
     val details by produceState<StickerDetails?>(null, s.id, reload, s.status) { value = actions.details(s.id) }
     var editing by remember { mutableStateOf(false) }
@@ -118,6 +119,8 @@ internal fun StickerSheet(s: StickerRow, actions: AppActions, onDismiss: () -> U
         onDismiss = onDismiss,
         footer = if (editing) null else {
             {
+                // The sheet covers the app's own toasts, so messages about sending show here.
+                KdsToastHost(message, actions.messageShown, Modifier.align(Alignment.CenterHorizontally))
                 KdsButton("Send in WhatsApp", { actions.sendViaWhatsApp(s) }, size = ButtonSize.LG, block = true,
                     icon = R.drawable.ic_kds_phone, enabled = s.primaryUri != null && !s.isLottie())
                 KdsButton("Share as photo", { actions.send(s, StickerSharer.Mode.SYSTEM_SHEET) },

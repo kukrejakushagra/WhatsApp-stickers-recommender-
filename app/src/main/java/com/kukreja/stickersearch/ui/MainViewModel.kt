@@ -408,7 +408,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------- sending ----------------
 
     /** Puts the sticker first in the Sticker Search pack and opens WhatsApp; the user sends it there. */
-    fun sendViaWhatsApp(activity: Context, s: StickerRow) {
+    /**
+     * [askToAdd] must launch WhatsApp's ENABLE_STICKER_PACK intent *for a result*: WhatsApp only shows its
+     * "Add sticker pack" screen to a caller it can identify, and reports validation errors in the result.
+     */
+    fun sendViaWhatsApp(activity: Context, s: StickerRow, askToAdd: (Intent) -> Unit) {
         viewModelScope.launch {
             val uri = s.primaryUri ?: return@launch toast("This sticker's file is missing. Run a scan.")
             if (s.formatEnum() == StickerFormat.LOTTIE_WAS) {
@@ -426,14 +430,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 r
             }
             when (result) {
-                is StickerPacks.Prepared.NotEligible -> toast(result.reason)
+                is StickerPacks.Prepared.NotEligible -> {
+                    events.add("pack_send", mapOf("step" to "not_eligible", "reason" to result.reason, "format" to s.format))
+                    toast(result.reason)
+                }
                 is StickerPacks.Prepared.Ok -> {
                     val added = withContext(Dispatchers.IO) { StickerPacks.isAdded(ctx, result.pack) }
-                    if (!added) {
+                    val size = StickerPacks.entries(ctx, result.pack).size
+                    events.add("pack_send", mapOf("step" to "prepared", "pack" to result.pack.id, "added" to added, "stickers" to size))
+                    if (size < StickerPacks.MIN) {
+                        toast("WhatsApp needs at least ${StickerPacks.MIN} stickers in a pack, and only $size could be prepared. " +
+                            "Try sending another ${if (result.pack.animated) "animated" else "static"} sticker.")
+                    } else if (!added) {
+                        pendingPack = result.pack
                         try {
-                            activity.startActivity(StickerPacks.addToWhatsAppIntent(ctx, result.pack))
-                            toast("Tap Add in WhatsApp. After that, the sticker is first in the ${result.pack.title} pack.")
+                            askToAdd(StickerPacks.addToWhatsAppIntent(ctx, result.pack))
+                            toast("Tap Add in WhatsApp to add the ${result.pack.title} pack.")
                         } catch (e: ActivityNotFoundException) {
+                            events.add("pack_send", mapOf("step" to "no_whatsapp", "error" to e.message))
                             toast("WhatsApp didn't open. Check it is installed, then try again.")
                         }
                     } else if (StickerPacks.openWhatsApp(activity)) {
@@ -444,6 +458,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     refreshPermissions()
                 }
             }
+        }
+    }
+
+    private var pendingPack: StickerPacks.Pack? = null
+
+    /** WhatsApp's answer to "add this pack": OK, or cancelled with a validation_error explaining why. */
+    fun onAddPackResult(resultCode: Int, data: Intent?) {
+        val pack = pendingPack
+        pendingPack = null
+        val error = data?.getStringExtra("validation_error")
+        events.add("pack_send", mapOf(
+            "step" to "whatsapp_result", "pack" to pack?.id, "resultCode" to resultCode, "validationError" to error,
+        ))
+        viewModelScope.launch {
+            val added = pack != null && withContext(Dispatchers.IO) { StickerPacks.isAdded(ctx, pack) }
+            toast(
+                when {
+                    resultCode == android.app.Activity.RESULT_OK || added ->
+                        "Pack added. In WhatsApp, open a chat and the sticker picker; your sticker is first in ${pack?.title ?: "Sticker Search"}."
+                    error != null -> "WhatsApp didn't add the pack: $error"
+                    else -> "WhatsApp closed without adding the pack. Tap Send in WhatsApp to try again."
+                },
+            )
+            refreshPermissions()
         }
     }
 

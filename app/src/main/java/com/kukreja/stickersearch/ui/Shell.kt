@@ -73,6 +73,9 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { vm.onTreePicked(it) }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { vm.importModels(it) }
     val expected = remember { arrayOfNulls<ModelKind>(1) }
+    val addPack = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        vm.onAddPackResult(r.resultCode, r.data)
+    }
     val singleModelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importModels(listOf(uri), expected[0])
     }
@@ -94,7 +97,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             copyReport = vm::copyReport,
             shareReport = { vm.shareReport(context) },
             send = { s, m -> vm.send(context, s, m) },
-            sendViaWhatsApp = { s -> vm.sendViaWhatsApp(context, s) },
+            sendViaWhatsApp = { s -> vm.sendViaWhatsApp(context, s) { intent -> addPack.launch(intent) } },
             messageShown = vm::consumeMessage,
             reportJson = vm::reportJson,
             details = vm::details,
@@ -154,7 +157,7 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0) {
     selected?.let { s ->
         // Keep the sheet in step with the live row (status, thumbnail) while it's open.
         val live = state.stickers.firstOrNull { it.id == s.id } ?: s
-        StickerSheet(live, actions) { selected = null }
+        StickerSheet(live, actions, state.message) { selected = null }
     }
 }
 
