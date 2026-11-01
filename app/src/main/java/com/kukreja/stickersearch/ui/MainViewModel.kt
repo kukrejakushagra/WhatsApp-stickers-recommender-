@@ -649,21 +649,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 is StickerPacks.Prepared.Ok -> {
                     val added = withContext(Dispatchers.IO) { StickerPacks.isAdded(ctx, result.pack) }
                     val size = StickerPacks.entries(ctx, result.pack).size
-                    events.add("pack_send", mapOf("step" to "prepared", "pack" to result.pack.id, "added" to added, "stickers" to size))
+                    val wl = withContext(Dispatchers.IO) { StickerPacks.whitelisted(ctx, result.pack) }
+                    events.add("pack_send", mapOf("step" to "prepared", "pack" to result.pack.id, "added" to added, "whitelist" to wl, "stickers" to size))
                     if (size < StickerPacks.MIN) {
                         toast("WhatsApp needs at least ${StickerPacks.MIN} stickers in a pack, and only $size could be prepared. " +
                             "Try sending another ${if (result.pack.animated) "animated" else "static"} sticker.")
                     } else if (!added) {
+                        // First time only: WhatsApp asks once, then we go straight to WhatsApp.
                         pendingPack = result.pack
+                        openAfterAdd = true
                         try {
                             askToAdd(StickerPacks.addToWhatsAppIntent(ctx, result.pack))
-                            toast("Tap Add in WhatsApp to add the ${result.pack.title} pack.")
+                            toast("One-time step: tap Add in WhatsApp. Next time it opens WhatsApp straight away.")
                         } catch (e: ActivityNotFoundException) {
+                            pendingPack = null; openAfterAdd = false
                             events.add("pack_send", mapOf("step" to "no_whatsapp", "error" to e.message))
                             toast("WhatsApp didn't open. Check it is installed, then try again.")
                         }
                     } else if (StickerPacks.openWhatsApp(activity)) {
-                        toast("Open a chat and the sticker picker; it's first in ${result.pack.title}.")
+                        toast(readyHint(result.pack))
                     } else {
                         toast("WhatsApp didn't open. Check it is installed, then try again.")
                     }
@@ -674,6 +678,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private var pendingPack: StickerPacks.Pack? = null
+    /** Set by Send in WhatsApp: once WhatsApp has added the pack, open it so the sticker can be sent. */
+    private var openAfterAdd = false
+
+    private fun readyHint(pack: StickerPacks.Pack) =
+        "In the chat, tap the sticker icon, then the ${pack.title} tray: your sticker is first."
+
+    /**
+     * One-time setup from Settings: fills both built-in packs and asks WhatsApp to add whichever
+     * isn't there yet, so Send in WhatsApp never stops at the Add screen later.
+     */
+    fun setUpQuickSend(askToAdd: (Intent) -> Unit) {
+        viewModelScope.launch {
+            val todo = withContext(Dispatchers.IO) {
+                StickerPacks.Pack.builtIns.filter { p ->
+                    if (StickerPacks.entries(ctx, p).size < StickerPacks.MIN) StickerPacks.fillIfShort(ctx, p, fillers(p, -1))
+                    StickerPacks.entries(ctx, p).size >= StickerPacks.MIN && !StickerPacks.isAdded(ctx, p)
+                }
+            }
+            refreshPacks()
+            if (todo.isEmpty()) {
+                return@launch toast(
+                    if (StickerPacks.Pack.builtIns.all { StickerPacks.isAdded(ctx, it) }) "Both Sticker Search packs are already in WhatsApp."
+                    else "There aren't enough stickers of each kind yet. Run a scan first.",
+                )
+            }
+            addQueue.clear(); addQueue.addAll(todo.drop(1)); queuedAsk = askToAdd
+            addPackToWhatsApp(todo.first(), askToAdd)
+        }
+    }
+
+    /** For when WhatsApp lost the pack (removed there, or reinstalled): forget it and ask again. */
+    fun readdPack(pack: StickerPacks.Pack, askToAdd: (Intent) -> Unit) {
+        StickerPacks.markAdded(ctx, pack, false)
+        refreshPacks()
+        addPackToWhatsApp(pack, askToAdd)
+    }
     /** Packs still to show WhatsApp's "Add" screen for, after the current one (bulk pack creation). */
     private val addQueue = ArrayDeque<StickerPacks.Pack>()
     private var queuedAsk: ((Intent) -> Unit)? = null
@@ -701,6 +741,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onAddPackResult(resultCode: Int, data: Intent?) {
         val pack = pendingPack
         pendingPack = null
+        val openNow = openAfterAdd
+        openAfterAdd = false
         // Bulk creation: show WhatsApp the next pack once it has answered about this one.
         addQueue.removeFirstOrNull()?.let { next -> queuedAsk?.let { ask -> addPackToWhatsApp(next, ask) } }
         if (addQueue.isEmpty() && pendingPack == null) queuedAsk = null
@@ -709,7 +751,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             "step" to "whatsapp_result", "pack" to pack?.id, "resultCode" to resultCode, "validationError" to error,
         ))
         viewModelScope.launch {
-            val added = pack != null && withContext(Dispatchers.IO) { StickerPacks.isAdded(ctx, pack) }
+            val added = pack != null && withContext(Dispatchers.IO) {
+                // WhatsApp's own "added" answer is remembered, so it isn't asked again on the next send.
+                if (resultCode == android.app.Activity.RESULT_OK) StickerPacks.markAdded(ctx, pack, true)
+                StickerPacks.isAdded(ctx, pack)
+            }
+            refreshPacks()
+            if (added && openNow && pack != null && StickerPacks.openWhatsApp(ctx)) {
+                toast(readyHint(pack))
+                return@launch
+            }
             toast(
                 when {
                     (resultCode == android.app.Activity.RESULT_OK || added) && pack?.custom == true ->

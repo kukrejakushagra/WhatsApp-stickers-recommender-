@@ -97,7 +97,16 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
             AiPanel(state, actions)
 
             // ---- WhatsApp ----
-            KdsSettingsGroup("WhatsApp packs", state.packs.map { info ->
+            val quickReady = state.packs.filter { !it.pack.custom }.all { it.added }
+            KdsSettingsGroup("WhatsApp packs", listOf<@Composable () -> Unit>({
+                KdsSettingsRow(
+                    title = "Quick send", icon = R.drawable.ic_kds_phone,
+                    description = if (quickReady) "Set up. Send in WhatsApp goes straight back to your chat."
+                        else "Add both Sticker Search packs to WhatsApp once, so Send in WhatsApp never stops at WhatsApp's Add screen.",
+                    onClick = if (quickReady) null else actions.setUpQuickSend,
+                    trailing = { if (quickReady) KdsBadge("Ready", BadgeTone.SOFT) else KdsButton("Set up", actions.setUpQuickSend, size = ButtonSize.SM) },
+                )
+            }) + state.packs.map { info ->
                 {
                     val pack = info.pack
                     KdsSettingsRow(

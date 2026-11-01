@@ -85,7 +85,7 @@ object StickerPacks {
     fun deletePack(ctx: Context, pack: Pack) {
         if (!pack.custom) return
         saveCustom(ctx, custom(ctx).filter { it.id != pack.id })
-        prefs(ctx).edit().remove(pack.id).remove("${pack.id}_v").apply()
+        prefs(ctx).edit().remove(pack.id).remove("${pack.id}_v").remove("${pack.id}_added").apply()
         File(ctx.filesDir, "packs/${pack.id}").deleteRecursively()
         notifyWhatsApp(ctx)
     }
@@ -97,7 +97,9 @@ object StickerPacks {
 
     fun version(ctx: Context, pack: Pack) = prefs(ctx).getInt("${pack.id}_v", 1)
 
-    private fun saveEntries(ctx: Context, pack: Pack, list: List<Entry>) {
+    private fun saveEntries(ctx: Context, pack: Pack, all: List<Entry>) {
+        // A listed sticker without its file makes WhatsApp reject the whole pack.
+        val list = all.filter { File(dir(ctx, pack), "${it.sha}.webp").exists() }
         prefs(ctx).edit()
             .putString(pack.id, JSONArray(list.map { JSONObject().put("sha", it.sha).put("emoji", it.emoji) }).toString())
             .putInt("${pack.id}_v", version(ctx, pack) + 1)
@@ -224,14 +226,29 @@ object StickerPacks {
 
     fun ensureTrays(ctx: Context) = all(ctx).forEach { ensureTray(ctx, it) }
 
-    /** True once WhatsApp has added this pack (WhatsApp's documented whitelist check). */
-    fun isAdded(ctx: Context, pack: Pack): Boolean = runCatching {
+    /**
+     * WhatsApp's documented whitelist check: true or false, or null when WhatsApp didn't answer.
+     * Some WhatsApp builds answer false (or nothing) even for an added pack, so this alone isn't trusted.
+     */
+    fun whitelisted(ctx: Context, pack: Pack): Boolean? = runCatching {
         val uri = Uri.parse("content://com.whatsapp.provider.sticker_whitelist_check/is_whitelisted")
             .buildUpon().appendQueryParameter("authority", authority(ctx)).appendQueryParameter("identifier", pack.id).build()
         ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
-            c.moveToFirst() && c.getInt(c.getColumnIndexOrThrow("result")) == 1
-        } ?: false
-    }.getOrDefault(false)
+            if (!c.moveToFirst()) null else c.getInt(c.getColumnIndexOrThrow("result")) == 1
+        }
+    }.getOrNull()
+
+    /**
+     * True once WhatsApp has added this pack: its whitelist says so, or it answered "added" to our
+     * request earlier. Remembering the answer stops the Add screen from coming back on every send.
+     */
+    fun isAdded(ctx: Context, pack: Pack): Boolean {
+        if (whitelisted(ctx, pack) == true) { markAdded(ctx, pack, true); return true }
+        return prefs(ctx).getBoolean("${pack.id}_added", false)
+    }
+
+    fun markAdded(ctx: Context, pack: Pack, added: Boolean) =
+        prefs(ctx).edit().putBoolean("${pack.id}_added", added).apply()
 
     /** Asks WhatsApp to add the pack; WhatsApp shows its own confirmation. */
     fun addToWhatsAppIntent(ctx: Context, pack: Pack) = Intent("com.whatsapp.intent.action.ENABLE_STICKER_PACK").apply {
@@ -243,6 +260,7 @@ object StickerPacks {
 
     fun openWhatsApp(ctx: Context): Boolean = try {
         ctx.packageManager.getLaunchIntentForPackage("com.whatsapp")?.let {
+            // Without a reset flag this brings WhatsApp's existing task forward: you're back in the chat you left.
             ctx.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
         } ?: false
     } catch (e: ActivityNotFoundException) { false }
@@ -313,7 +331,7 @@ class StickerContentProvider : ContentProvider() {
         if (matcher.match(uri) != ASSET) return null
         val seg = uri.pathSegments
         val f = StickerPacks.file(ctx, seg[seg.size - 2], seg.last()) ?: return null
-        return AssetFileDescriptor(ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY), 0, AssetFileDescriptor.UNKNOWN_LENGTH)
+        return AssetFileDescriptor(ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY), 0, f.length())
     }
 
     override fun getType(uri: Uri): String? {

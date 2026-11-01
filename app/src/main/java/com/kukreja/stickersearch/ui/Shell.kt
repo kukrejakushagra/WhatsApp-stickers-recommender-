@@ -79,6 +79,8 @@ data class AppActions(
     val removeFromPack: (com.kukreja.stickersearch.share.StickerPacks.Pack, String) -> Unit = { _, _ -> },
     val deletePack: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
     val renamePack: (com.kukreja.stickersearch.share.StickerPacks.Pack, String) -> Unit = { _, _ -> },
+    val setUpQuickSend: () -> Unit = {},
+    val readdPack: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
 )
 
 @Composable
@@ -153,6 +155,8 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             removeFromPack = vm::removeFromPack,
             deletePack = vm::deletePack,
             renamePack = vm::renamePack,
+            setUpQuickSend = { vm.setUpQuickSend { intent -> addPack.launch(intent) } },
+            readdPack = { pack -> vm.readdPack(pack) { intent -> addPack.launch(intent) } },
         )
     }
     AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)

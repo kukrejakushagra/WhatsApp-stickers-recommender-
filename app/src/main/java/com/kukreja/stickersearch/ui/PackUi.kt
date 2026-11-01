@@ -148,8 +148,11 @@ internal fun PackSheet(info: PackInfo, state: UiState, actions: AppActions, onDi
                     style = Kds.type.caption, color = Kds.colors.mutedForeground)
                 !info.added -> KdsButton("Add to WhatsApp", { actions.addPackToWhatsApp(p) }, size = ButtonSize.LG, block = true,
                     icon = R.drawable.ic_kds_phone)
-                else -> Text("Changes show up in WhatsApp's sticker picker; reopen the picker if they don't.",
-                    style = Kds.type.caption, color = Kds.colors.mutedForeground)
+                else -> {
+                    Text("Changes show up in WhatsApp's sticker picker; reopen the picker if they don't.",
+                        style = Kds.type.caption, color = Kds.colors.mutedForeground)
+                    KdsButton("Not in WhatsApp? Add it again", { actions.readdPack(p) }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+                }
             }
             if (p.custom) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
