@@ -146,7 +146,7 @@ class GemmaAnnotator private constructor(
             return Bitmap.createScaledBitmap(src, (src.width * s).toInt(), (src.height * s).toInt(), true)
         }
 
-        private fun onWhite(src: Bitmap): Bitmap {
+        fun onWhite(src: Bitmap): Bitmap {
             val out = Bitmap.createBitmap(SIDE, SIDE, Bitmap.Config.ARGB_8888)
             Canvas(out).apply { drawColor(Color.WHITE); drawBitmap(src, null, Rect(0, 0, SIDE, SIDE), Paint(Paint.FILTER_BITMAP_FLAG)) }
             return out

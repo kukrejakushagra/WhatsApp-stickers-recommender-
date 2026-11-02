@@ -418,6 +418,30 @@ private fun AiPanel(state: UiState, actions: AppActions) {
         )
         Text("Starting now runs on battery too; describing all stickers takes a few nights.",
             style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(top = 6.dp))
+
+        // ---- Faster: describe on a PC ----
+        Spacer(Modifier.height(18.dp))
+        Text("Faster: describe on a PC", style = Kds.type.bodyStrong, color = Kds.colors.foreground)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Export the %,d undescribed stickers to a file, copy it to your computer and run the script inside it with a local AI model (Ollama). It takes hours instead of nights. Then import results.jsonl here. Your stickers only go where you copy them; nothing is uploaded."
+                .format(pending + (state.statusCounts[StickerStatus.NEEDS_REVIEW] ?: 0)),
+            style = Kds.type.caption, color = Kds.colors.mutedForeground,
+        )
+        Spacer(Modifier.height(10.dp))
+        state.pcProgress?.let {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.kukreja.stickersearch.ui.kds.SpinningLoader(14.dp, Kds.colors.mutedForeground)
+                Text(it, style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.foreground)
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KdsButton("Export for PC", actions.exportForPc, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null)
+            KdsButton("Import PC results", actions.importPcResults, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                icon = R.drawable.ic_kds_folder, enabled = state.pcProgress == null)
+        }
     }
 }
 

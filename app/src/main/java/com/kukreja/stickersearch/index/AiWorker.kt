@@ -237,24 +237,8 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
         }
     }
 
-    /** Keyframes for animated stickers (motion), the full-size original or thumbnail for static ones. */
-    private suspend fun imagesFor(s: StickerEntity, preferOriginal: Boolean): List<Bitmap> {
-        if (s.isAnimated) {
-            val frames = db.frames().forSticker(s.id).mapNotNull { BitmapFactory.decodeFile(it.framePath) }
-            if (frames.isNotEmpty()) return frames
-        }
-        if (preferOriginal && !s.isAnimated) {
-            db.stickers().liveUri(s.id)?.let { uri ->
-                runCatching {
-                    ImageDecoder.decodeBitmap(ImageDecoder.createSource(applicationContext.contentResolver, Uri.parse(uri))) { d, _, _ ->
-                        d.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                        d.setTargetSize(512, 512)
-                    }
-                }.getOrNull()?.let { return listOf(it) }
-            }
-        }
-        return listOfNotNull(s.thumbnailPath?.takeIf { File(it).exists() }?.let(BitmapFactory::decodeFile))
-    }
+    private suspend fun imagesFor(s: StickerEntity, preferOriginal: Boolean): List<Bitmap> =
+        StickerImages.load(applicationContext, db, s, preferOriginal)
 
     override suspend fun getForegroundInfo() = IndexNotification.info(applicationContext, done, total, phase.ifEmpty { "Preparing search" })
 

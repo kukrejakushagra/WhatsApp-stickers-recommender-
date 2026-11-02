@@ -81,6 +81,8 @@ data class AppActions(
     val renamePack: (com.kukreja.stickersearch.share.StickerPacks.Pack, String) -> Unit = { _, _ -> },
     val setUpQuickSend: () -> Unit = {},
     val setThemeMode: (ThemeMode) -> Unit = {},
+    val exportForPc: () -> Unit = {},
+    val importPcResults: () -> Unit = {},
     val readdPack: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
 )
 
@@ -97,6 +99,12 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     ) { vm.attach(it) }
     val addPack = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         vm.onAddPackResult(r.resultCode, r.data)
+    }
+    val pcExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) vm.exportForPc(uri)
+    }
+    val pcImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importPcResults(uri)
     }
     val singleModelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importModels(listOf(uri), expected[0])
@@ -157,6 +165,8 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             deletePack = vm::deletePack,
             renamePack = vm::renamePack,
             setThemeMode = vm::setThemeMode,
+            exportForPc = { pcExport.launch("sticker-search-export.zip") },
+            importPcResults = { pcImport.launch(arrayOf("*/*")) },
             setUpQuickSend = { vm.setUpQuickSend { intent -> addPack.launch(intent) } },
             readdPack = { pack -> vm.readdPack(pack) { intent -> addPack.launch(intent) } },
         )

@@ -163,6 +163,8 @@ data class UiState(
     val message: String? = null,
     val eventCount: Int = 0,
     val themeMode: ThemeMode = ThemeMode.DARK,
+    /** Progress of a PC export or import, shown in Settings › AI. */
+    val pcProgress: String? = null,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -409,6 +411,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun savedThemeMode() =
         runCatching { ThemeMode.valueOf(uiPrefs.getString("theme", null) ?: ThemeMode.DARK.name) }.getOrDefault(ThemeMode.DARK)
+
+    // ---------------- describe on a PC ----------------
+
+    fun exportForPc(out: Uri) {
+        if (_state.value.pcProgress != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(pcProgress = "Preparing the export") }
+            runCatching {
+                com.kukreja.stickersearch.index.PcBridge.export(ctx, db, out) { d, t ->
+                    if (d % 20 == 0 || d == t) _state.update { it.copy(pcProgress = "Exporting %,d of %,d stickers".format(d, t)) }
+                }
+            }.onSuccess { n ->
+                events.add("pc_export", mapOf("stickers" to n))
+                toast(if (n == 0) "Every sticker is already described." else
+                    "Saved %,d stickers. Copy the file to your PC and follow README.txt inside it.".format(n))
+            }.onFailure { toast("Export failed: ${it.message}") }
+            _state.update { it.copy(pcProgress = null) }
+        }
+    }
+
+    fun importPcResults(src: Uri) {
+        if (_state.value.pcProgress != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(pcProgress = "Importing descriptions") }
+            runCatching { com.kukreja.stickersearch.index.PcBridge.import(ctx, db, repo, src) }
+                .onSuccess { r ->
+                    events.add("pc_import", mapOf("saved" to r.saved, "unreadable" to r.unreadable, "unknown" to r.unknown, "already" to r.alreadyDescribed))
+                    toast(buildString {
+                        append("Imported %,d descriptions.".format(r.saved))
+                        if (r.alreadyDescribed > 0) append(" %,d were already described on the phone.".format(r.alreadyDescribed))
+                        if (r.unreadable > 0) append(" %,d couldn't be read.".format(r.unreadable))
+                        if (r.unknown > 0) append(" %,d aren't in this library.".format(r.unknown))
+                    })
+                    // Meaning-search vectors and the related-stickers graph for the new descriptions.
+                    if (r.saved > 0) AiWorker.enqueue(ctx, manual = false)
+                }
+                .onFailure { toast("Import failed: ${it.message}") }
+            _state.update { it.copy(pcProgress = null) }
+        }
+    }
 
     fun runAiNow() {
         com.kukreja.stickersearch.ml.DescribeGuard.resume(ctx)

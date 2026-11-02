@@ -63,6 +63,10 @@ interface AiDao {
     @Query("SELECT COUNT(*) FROM stickers WHERE image_embedding IS NULL AND status IN ('PENDING', 'INDEXED') AND thumbnail_path IS NOT NULL")
     suspend fun countPendingVisual(): Int
 
+    /** Not described yet, including ones the phone gave up on: what the PC export offers. */
+    @Query("SELECT * FROM stickers WHERE status IN ('PENDING', 'NEEDS_REVIEW') ORDER BY id")
+    suspend fun undescribed(): List<StickerEntity>
+
     @Query("SELECT COUNT(*) FROM stickers WHERE status = 'PENDING' AND attempts < :maxAttempts")
     suspend fun countPendingAnnotation(maxAttempts: Int): Int
 

@@ -55,4 +55,16 @@ class AnnotationTest {
             assertTrue("missing $it in $t", t.contains(it))
         }
     }
+
+    @Test
+    fun `a line from the PC script's results jsonl parses like a phone reply`() {
+        // Exactly what describe.py writes: the model's reply as an escaped string under "raw".
+        val line = """{"sha256": "abc", "model": "gemma3:12b", "raw": "{\"description\": \"Cat rolling its eyes\", \"text\": \"\", \"emotions\": [\"annoyed\"], \"intents\": [\"sarcasm\"], \"tags\": [\"cat\", \"eye roll\"], \"phrases\": [\"whatever\"], \"hinglish\": [\"haan haan\"], \"hindi\": [\"अच्छा\"], \"emoji\": \"🙄\", \"confidence\": 0.8}", "seconds": 2.1}"""
+        val a = Annotation.parse(org.json.JSONObject(line).getString("raw"))!!
+        assertEquals("Cat rolling its eyes", a.description)
+        assertEquals("🙄", a.emoji)
+        assertTrue(a.tags.contains("cat"))
+        assertTrue(a.phrases.contains("haan haan"))
+        assertTrue(a.phrases.contains("अच्छा"))
+    }
 }
