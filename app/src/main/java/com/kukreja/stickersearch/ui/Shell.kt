@@ -80,6 +80,7 @@ data class AppActions(
     val deletePack: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
     val renamePack: (com.kukreja.stickersearch.share.StickerPacks.Pack, String) -> Unit = { _, _ -> },
     val setUpQuickSend: () -> Unit = {},
+    val setThemeMode: (ThemeMode) -> Unit = {},
     val readdPack: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
 )
 
@@ -155,6 +156,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             removeFromPack = vm::removeFromPack,
             deletePack = vm::deletePack,
             renamePack = vm::renamePack,
+            setThemeMode = vm::setThemeMode,
             setUpQuickSend = { vm.setUpQuickSend { intent -> addPack.launch(intent) } },
             readdPack = { pack -> vm.readdPack(pack) { intent -> addPack.launch(intent) } },
         )

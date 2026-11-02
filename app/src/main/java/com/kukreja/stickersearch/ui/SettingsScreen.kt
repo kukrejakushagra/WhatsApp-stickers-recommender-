@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.kukreja.stickersearch.ui.kds.KdsFilterChip
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -126,6 +128,27 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(horizontal = 4.dp))
 
             // ---- Background ----
+            KdsSettingsGroup("Appearance", listOf(
+                {
+                    KdsSettingsRow(
+                        title = "Theme", icon = R.drawable.ic_kds_sliders,
+                        description = when (state.themeMode) {
+                            ThemeMode.SYSTEM -> "Follows your phone's dark mode setting"
+                            ThemeMode.LIGHT -> "Always light"
+                            ThemeMode.DARK -> "Always dark"
+                        },
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(ThemeMode.DARK to "Dark", ThemeMode.LIGHT to "Light", ThemeMode.SYSTEM to "System").forEach { (m, label) ->
+                            KdsFilterChip(label, state.themeMode == m, { actions.setThemeMode(m) })
+                        }
+                    }
+                },
+            ))
+
             KdsSettingsGroup("Background", listOf(
                 {
                     KdsSettingsRow(

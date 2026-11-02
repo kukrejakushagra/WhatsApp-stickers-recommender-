@@ -74,6 +74,9 @@ data class IndexState(
     val error: String? = null,
 )
 
+/** App colours: follow the phone, or always light / dark. Dark is the default. */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 data class AiState(
     val running: Boolean = false,
     val phase: String? = null,
@@ -159,6 +162,7 @@ data class UiState(
     val diagnostic: ScanOutcome? = null,
     val message: String? = null,
     val eventCount: Int = 0,
+    val themeMode: ThemeMode = ThemeMode.DARK,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -203,7 +207,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val diagnosticEngine = ScanEngine(app, Thumbnailer(File(app.cacheDir, "diag-thumbs")))
     val sharer = StickerSharer(app, events)
 
-    private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length()))
+    private val uiPrefs = app.getSharedPreferences("ui", Context.MODE_PRIVATE)
+    private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length(), themeMode = savedThemeMode()))
     val state: StateFlow<UiState> = _state
     private var searchJob: Job? = null
     private val graphRepo = com.kukreja.stickersearch.graph.GraphRepository(app)
@@ -397,6 +402,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Runs all AI passes now, including annotation on battery (the user asked). */
+    fun setThemeMode(mode: ThemeMode) {
+        uiPrefs.edit().putString("theme", mode.name).apply()
+        _state.update { it.copy(themeMode = mode) }
+    }
+
+    private fun savedThemeMode() =
+        runCatching { ThemeMode.valueOf(uiPrefs.getString("theme", null) ?: ThemeMode.DARK.name) }.getOrDefault(ThemeMode.DARK)
+
     fun runAiNow() {
         com.kukreja.stickersearch.ml.DescribeGuard.resume(ctx)
         AiWorker.enqueue(ctx, manual = true)
