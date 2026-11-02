@@ -39,7 +39,7 @@ import com.kukreja.stickersearch.ui.kds.KdsProgress
 import com.kukreja.stickersearch.ui.kds.KdsStatCard
 import com.kukreja.stickersearch.ui.kds.theme.Kds
 
-private enum class Filter { ALL, ANIMATED, LOTTIE, NOT_DESCRIBED, ATTENTION }
+private enum class Filter { ALL, ANIMATED, LOTTIE, DESCRIBED, NOT_DESCRIBED, ATTENTION }
 
 @Composable
 internal fun LibraryScreen(state: UiState, actions: AppActions, onOpen: (StickerRow) -> Unit, goToSettings: () -> Unit) {
@@ -66,6 +66,7 @@ internal fun LibraryScreen(state: UiState, actions: AppActions, onOpen: (Sticker
         Filter.ALL -> true
         Filter.ANIMATED -> s.isAnimated && !s.isLottie()
         Filter.LOTTIE -> s.isLottie()
+        Filter.DESCRIBED -> s.status == StickerStatus.INDEXED
         Filter.NOT_DESCRIBED -> s.status == StickerStatus.PENDING
         Filter.ATTENTION -> s.needsAttention()
     }
@@ -103,7 +104,7 @@ internal fun LibraryScreen(state: UiState, actions: AppActions, onOpen: (Sticker
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    listOf(Filter.ALL to "All", Filter.ANIMATED to "Animated", Filter.LOTTIE to "Lottie",
+                    listOf(Filter.ALL to "All", Filter.ANIMATED to "Animated", Filter.LOTTIE to "Lottie", Filter.DESCRIBED to "Described",
                         Filter.NOT_DESCRIBED to "Not described", Filter.ATTENTION to "Need a look")
                         .filter { (f, _) -> f == Filter.ALL || f == filter || counts.getValue(f) > 0 }
                         .forEach { (f, label) -> KdsFilterChip(label, filter == f, { filter = if (filter == f) Filter.ALL else f }, counts.getValue(f)) }
@@ -138,6 +139,7 @@ internal fun LibraryScreen(state: UiState, actions: AppActions, onOpen: (Sticker
     if (naming) {
         val default = when (filter) {
             Filter.ANIMATED -> "Animated"
+            Filter.DESCRIBED -> "Described"
             Filter.NOT_DESCRIBED -> "New stickers"
             else -> "My stickers"
         }
