@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -108,10 +110,14 @@ fun KdsSheet(
             Box(Modifier.padding(top = 10.dp, bottom = 6.dp).width(48.dp).height(6.dp).background(c.muted, CircleShape))
         },
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        // Header and footer stay put; only the body scrolls, so the footer's actions are always on screen.
+        Column(Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 20.dp)) {
             Text(title, style = Kds.type.heading, color = c.foreground)
             subtitle?.let { Text(it, style = Kds.type.caption, color = c.mutedForeground) }
-            Column(Modifier.weight(1f, fill = false).padding(vertical = 12.dp), content = content)
+            Column(
+                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
+                content = content,
+            )
         }
         if (footer != null) {
             HorizontalDivider(thickness = 1.dp, color = c.border)
