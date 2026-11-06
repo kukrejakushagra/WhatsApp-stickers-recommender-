@@ -219,6 +219,8 @@ fun KdsEmptyState(
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    /** Shows a spinner in the corner button (the action is under way). */
+    actionBusy: Boolean = false,
 ) {
     val c = Kds.colors
     Column(modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -262,6 +264,8 @@ fun KdsMediaTile(
     @DrawableRes actionIcon: Int? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    /** Shows a spinner in the corner button (the action is under way). */
+    actionBusy: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val c = Kds.colors
@@ -296,10 +300,15 @@ fun KdsMediaTile(
                 .semantics { actionLabel?.let { contentDescription = it } },
             contentAlignment = Alignment.Center,
         ) {
+            // White ring and shadow keep it visible on any sticker and in both themes.
             Box(
-                Modifier.size(30.dp).shadow(3.dp, CircleShape).background(c.brand, CircleShape),
+                Modifier.size(32.dp).shadow(4.dp, CircleShape).background(c.brand, CircleShape)
+                    .border(2.dp, Color.White, CircleShape),
                 contentAlignment = Alignment.Center,
-            ) { KdsIcon(actionIcon, 15.dp, c.brandForeground) }
+            ) {
+                if (actionBusy) SpinningLoader(16.dp, c.brandForeground)
+                else KdsIcon(actionIcon, 16.dp, c.brandForeground)
+            }
         }
     }
     if (selectable) {

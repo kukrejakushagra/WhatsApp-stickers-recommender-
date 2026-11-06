@@ -136,8 +136,9 @@ internal fun StickerSheet(
             {
                 // The sheet covers the app's own toasts, so messages about sending show here.
                 KdsToastHost(message, actions.messageShown, Modifier.align(Alignment.CenterHorizontally))
-                KdsButton("Send in WhatsApp", { actions.sendViaWhatsApp(s) }, size = ButtonSize.LG, block = true,
-                    icon = R.drawable.ic_kds_phone, enabled = s.primaryUri != null && !s.isLottie())
+                KdsButton(if (state.sendingId == s.id) "Preparing for WhatsApp" else "Send in WhatsApp", { actions.sendViaWhatsApp(s) },
+                    size = ButtonSize.LG, block = true, loading = state.sendingId == s.id,
+                    icon = R.drawable.ic_kds_send, enabled = s.primaryUri != null && !s.isLottie())
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     KdsButton("Add to pack", { choosingPack = true }, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
                         icon = R.drawable.ic_kds_folder, enabled = s.primaryUri != null && !s.isLottie())

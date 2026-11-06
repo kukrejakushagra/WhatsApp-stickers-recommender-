@@ -158,7 +158,8 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                             s.recentlyUsed.forEach { r ->
                                 KdsMediaTile(onClick = { onOpen(r) }, modifier = Modifier.size(84.dp), label = tileLabel(r), onLongClick = { actions.sendViaWhatsApp(r) },
                                     actionIcon = R.drawable.ic_kds_send, actionLabel = "Send in WhatsApp",
-                                    onAction = if (r.isLottie() || r.primaryUri == null) null else ({ actions.sendViaWhatsApp(r) })) {
+                                    onAction = if (r.isLottie() || r.primaryUri == null) null else ({ actions.sendViaWhatsApp(r) }),
+                                    actionBusy = state.sendingId == r.id) {
                                     Thumb(r.thumbnailPath, Modifier.fillMaxSize())
                                 }
                             }
@@ -221,22 +222,22 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         if (assist.attachments.isNotEmpty() && assist.done) {
             if (assist.suggestions.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Suggested replies") }
-                items(assist.suggestions, key = { "s${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send) }
+                items(assist.suggestions, key = { "s${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id) }
             }
             if (assist.found.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("In your images") }
-                items(assist.found, key = { "f${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send) }
+                items(assist.found, key = { "f${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id) }
             }
         } else if (s.query.isNotBlank()) {
             items(s.results, key = { it.id }) { r ->
-                ResultTile(r, s.matched[r.id].orEmpty().ifEmpty { listOf(" ") }, tap, selecting, r.id in state.selected, send)
+                ResultTile(r, s.matched[r.id].orEmpty().ifEmpty { listOf(" ") }, tap, selecting, r.id in state.selected, send, state.sendingId == r.id)
             }
             if (s.related.isNotEmpty() && !s.searching) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Related") }
-                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), tap, selecting, r.id in state.selected, send) }
+                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), tap, selecting, r.id in state.selected, send, state.sendingId == r.id) }
             }
         } else {
-            items(library, key = { "l${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send) }
+            items(library, key = { "l${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id) }
         }
     }
     if (browsing && library.isNotEmpty()) {
@@ -277,14 +278,14 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun ResultTile(
     r: StickerRow, why: List<String>, onTap: (StickerRow) -> Unit, selecting: Boolean = false, picked: Boolean = false,
-    onSend: ((StickerRow) -> Unit)? = null,
+    onSend: ((StickerRow) -> Unit)? = null, sending: Boolean = false,
 ) {
     Column {
         KdsMediaTile(onClick = { onTap(r) }, label = tileLabel(r), selectable = selecting, picked = picked,
             onLongClick = onSend?.let { f -> { f(r) } },
             // Lottie stickers can't go into WhatsApp packs, so they get no send button.
             actionIcon = R.drawable.ic_kds_send, actionLabel = "Send in WhatsApp",
-            onAction = onSend?.takeIf { !r.isLottie() && r.primaryUri != null }?.let { f -> { f(r) } }) {
+            onAction = onSend?.takeIf { !r.isLottie() && r.primaryUri != null }?.let { f -> { f(r) } }, actionBusy = sending) {
             Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
         }
         if (why.isNotEmpty()) {

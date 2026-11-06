@@ -165,6 +165,8 @@ data class UiState(
     val themeMode: ThemeMode = ThemeMode.DARK,
     /** Progress of a PC export or import, shown in Settings › AI. */
     val pcProgress: String? = null,
+    /** The sticker being sent to WhatsApp right now; its send button shows a spinner. */
+    val sendingId: Long? = null,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -705,7 +707,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * "Add sticker pack" screen to a caller it can identify, and reports validation errors in the result.
      */
     fun sendViaWhatsApp(activity: Context, s: StickerRow, askToAdd: (Intent) -> Unit) {
+        // One at a time: a second tap while the first is still preparing is ignored.
+        if (_state.value.sendingId != null) return
+        _state.update { it.copy(sendingId = s.id) }
         viewModelScope.launch {
+          try {
             val uri = s.primaryUri ?: return@launch toast("This sticker's file is missing. Run a scan.")
             if (s.formatEnum() == StickerFormat.LOTTIE_WAS) {
                 return@launch toast("WhatsApp only accepts WebP in third-party packs, so Lottie stickers can't be sent this way.")
@@ -754,6 +760,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     refreshPermissions()
                 }
             }
+          } finally {
+            _state.update { it.copy(sendingId = null) }
+          }
         }
     }
 
