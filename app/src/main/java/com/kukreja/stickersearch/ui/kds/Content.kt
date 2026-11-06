@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -256,6 +258,10 @@ fun KdsMediaTile(
     picked: Boolean = false,
     /** Long-press action (e.g. send straight to WhatsApp); a haptic tick confirms it. */
     onLongClick: (() -> Unit)? = null,
+    /** A small round button in the bottom-right corner (e.g. Send in WhatsApp); hidden while selecting. */
+    @DrawableRes actionIcon: Int? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val c = Kds.colors
@@ -280,6 +286,20 @@ fun KdsMediaTile(
                 modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
                     .background(c.mediaOverlay, RoundedCornerShape(KdsRadius.xs)).padding(horizontal = 4.dp),
             )
+        }
+    }
+    if (!selectable && actionIcon != null && onAction != null) {
+        // 32dp visible disc inside a 44dp touch target, so it's easy to hit without covering the sticker.
+        Box(
+            Modifier.align(Alignment.BottomEnd).size(44.dp)
+                .clickable(role = Role.Button, onClickLabel = actionLabel, onClick = onAction)
+                .semantics { actionLabel?.let { contentDescription = it } },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier.size(30.dp).shadow(3.dp, CircleShape).background(c.brand, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { KdsIcon(actionIcon, 15.dp, c.brandForeground) }
         }
     }
     if (selectable) {

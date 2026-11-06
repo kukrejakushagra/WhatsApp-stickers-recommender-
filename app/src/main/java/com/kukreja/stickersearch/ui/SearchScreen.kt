@@ -156,7 +156,9 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                         Spacer(Modifier.height(8.dp))
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             s.recentlyUsed.forEach { r ->
-                                KdsMediaTile(onClick = { onOpen(r) }, modifier = Modifier.size(76.dp), label = tileLabel(r), onLongClick = { actions.sendViaWhatsApp(r) }) {
+                                KdsMediaTile(onClick = { onOpen(r) }, modifier = Modifier.size(84.dp), label = tileLabel(r), onLongClick = { actions.sendViaWhatsApp(r) },
+                                    actionIcon = R.drawable.ic_kds_send, actionLabel = "Send in WhatsApp",
+                                    onAction = if (r.isLottie() || r.primaryUri == null) null else ({ actions.sendViaWhatsApp(r) })) {
                                     Thumb(r.thumbnailPath, Modifier.fillMaxSize())
                                 }
                             }
@@ -192,7 +194,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                                 .filter { f -> f == LibraryFilter.ALL || f == filter || counts.getValue(f) > 0 }
                                 .forEach { f -> KdsFilterChip(f.label, filter == f, { filter = if (filter == f) LibraryFilter.ALL else f }, counts.getValue(f)) }
                         }
-                        Text("Tap a sticker for details · long-press to send it in WhatsApp",
+                        Text("Tap a sticker for details · tap its send button (or long-press it) to send it in WhatsApp",
                             style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                     }
                 } else {
@@ -279,7 +281,10 @@ private fun ResultTile(
 ) {
     Column {
         KdsMediaTile(onClick = { onTap(r) }, label = tileLabel(r), selectable = selecting, picked = picked,
-            onLongClick = onSend?.let { f -> { f(r) } }) {
+            onLongClick = onSend?.let { f -> { f(r) } },
+            // Lottie stickers can't go into WhatsApp packs, so they get no send button.
+            actionIcon = R.drawable.ic_kds_send, actionLabel = "Send in WhatsApp",
+            onAction = onSend?.takeIf { !r.isLottie() && r.primaryUri != null }?.let { f -> { f(r) } }) {
             Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
         }
         if (why.isNotEmpty()) {
