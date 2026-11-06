@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -224,9 +225,9 @@ internal fun StickerSheet(
             }
         }
         details?.let { d ->
-            if (d.story.size > 1) RelatedRow("Part of a story · ${d.story.indexOfFirst { it.id == s.id } + 1} of ${d.story.size}", d.story, s.id, onOpen)
-            if (d.looks.isNotEmpty()) RelatedRow("Looks alike", d.looks, s.id, onOpen)
-            d.topics.forEach { (label, rows) -> RelatedRow("Also about $label", rows, s.id, onOpen) }
+            if (d.story.size > 1) RelatedRow("Part of a story · ${d.story.indexOfFirst { it.id == s.id } + 1} of ${d.story.size}", d.story, s.id, onOpen, actions.sendViaWhatsApp)
+            if (d.looks.isNotEmpty()) RelatedRow("Looks alike", d.looks, s.id, onOpen, actions.sendViaWhatsApp)
+            d.topics.forEach { (label, rows) -> RelatedRow("Also about $label", rows, s.id, onOpen, actions.sendViaWhatsApp) }
         }
         Spacer(Modifier.height(10.dp))
         if (showFiles) {
@@ -316,7 +317,7 @@ internal fun LottiePreview(uri: Uri, modifier: Modifier) {
 
 /** A titled, scrolling row of related stickers; the current one is outlined. */
 @Composable
-private fun RelatedRow(title: String, rows: List<StickerRow>, currentId: Long, onOpen: (StickerRow) -> Unit) {
+private fun RelatedRow(title: String, rows: List<StickerRow>, currentId: Long, onOpen: (StickerRow) -> Unit, onSend: (StickerRow) -> Unit = {}) {
     Spacer(Modifier.height(14.dp))
     Text(title.uppercase(), style = Kds.type.overline, color = Kds.colors.mutedForeground)
     Spacer(Modifier.height(6.dp))
@@ -326,7 +327,7 @@ private fun RelatedRow(title: String, rows: List<StickerRow>, currentId: Long, o
             Box(
                 Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)).background(Kds.colors.glassClear)
                     .border(if (current) 2.dp else 1.dp, if (current) Kds.colors.brand else Kds.colors.glassBorder, RoundedCornerShape(8.dp))
-                    .then(if (current) Modifier else Modifier.clickable { onOpen(r) }).padding(4.dp),
+                    .then(if (current) Modifier else Modifier.combinedClickable(onLongClick = { onSend(r) }) { onOpen(r) }).padding(4.dp),
             ) { Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image) }
         }
     }

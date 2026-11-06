@@ -30,6 +30,11 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.kukreja.stickersearch.ui.kds.KdsProgress
+import com.kukreja.stickersearch.ui.kds.KdsFastScroller
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,20 +68,34 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     val ai = state.ai.counts
     val selecting = state.selecting
     val tap: (StickerRow) -> Unit = if (selecting) { r -> actions.toggleSelected(r.id) } else onOpen
-    // What "Top 30" picks from: the results currently on screen, best first.
+    // Long-press anywhere sends straight to WhatsApp (not while picking stickers for a pack).
+    val send: ((StickerRow) -> Unit)? = if (selecting) null else actions.sendViaWhatsApp
+    // An empty search box shows the whole library, newest first, with its filters.
+    val browsing = s.query.isBlank() && assist.attachments.isEmpty()
+    var filter by rememberSaveable { mutableStateOf(LibraryFilter.ALL) }
+    val all = state.stickers
+    val counts = remember(all) { LibraryFilter.entries.associateWith { f -> all.count { f.matches(it) } } }
+    val library = remember(all, filter) { all.filter { filter.matches(it) } }
+    // What "Top 30" / "First 30" picks from: what's on screen, best (or newest) first.
     val visible = if (assist.attachments.isNotEmpty() && assist.done) assist.suggestions + assist.found
-        else if (s.query.isNotBlank()) s.results + s.related.map { it.first } else emptyList()
+        else if (s.query.isNotBlank()) s.results + s.related.map { it.first }
+        else library.filterNot { it.isLottie() }
     var naming by remember { mutableStateOf(false) }
+    val gridState = rememberLazyGridState()
+    val monthFmt = remember { java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.getDefault()) }
+    // Back to the top when switching between browsing and results, or changing the filter.
+    LaunchedEffect(browsing, filter) { gridState.scrollToItem(0) }
     Box(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
-        GridCells.Fixed(3), Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = BottomClearance + if (selecting) 112.dp else 0.dp),
+        GridCells.Fixed(3), Modifier.fillMaxSize(), state = gridState,
+        // Extra end padding while browsing keeps the fast-scroll handle off the last column.
+        contentPadding = PaddingValues(start = 16.dp, end = if (browsing) 24.dp else 16.dp, bottom = BottomClearance + if (selecting) 112.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
                 KdsAppBar(
-                    "Search", inset = 4.dp,
+                    "Stickers", inset = 4.dp,
                     subtitle = if (ai.total > 0) "%,d stickers · %,d described".format(ai.total, ai.annotated) else null,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -137,7 +156,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                         Spacer(Modifier.height(8.dp))
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             s.recentlyUsed.forEach { r ->
-                                KdsMediaTile(onClick = { onOpen(r) }, modifier = Modifier.size(76.dp), label = tileLabel(r)) {
+                                KdsMediaTile(onClick = { onOpen(r) }, modifier = Modifier.size(76.dp), label = tileLabel(r), onLongClick = { actions.sendViaWhatsApp(r) }) {
                                     Thumb(r.thumbnailPath, Modifier.fillMaxSize())
                                 }
                             }
@@ -150,6 +169,31 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             EXAMPLES.forEach { q -> KdsFilterChip(q, false, { actions.useRecent(q) }) }
                         }
+                    }
+                    if (all.isNotEmpty()) {
+                        Spacer(Modifier.height(18.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("ALL STICKERS · NEWEST FIRST", style = Kds.type.overline, color = Kds.colors.mutedForeground, modifier = Modifier.weight(1f))
+                            if (!selecting) SelectButton(actions)
+                        }
+                        if (state.index.running && state.index.total > 0) {
+                            Spacer(Modifier.height(8.dp))
+                            KdsProgress(state.index.done.toFloat() / state.index.total)
+                            Text("Indexing %,d of %,d".format(state.index.done, state.index.total),
+                                style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
+                                modifier = Modifier.padding(top = 4.dp))
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            LibraryFilter.entries
+                                .filter { f -> f == LibraryFilter.ALL || f == filter || counts.getValue(f) > 0 }
+                                .forEach { f -> KdsFilterChip(f.label, filter == f, { filter = if (filter == f) LibraryFilter.ALL else f }, counts.getValue(f)) }
+                        }
+                        Text("Tap a sticker for details · long-press to send it in WhatsApp",
+                            style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                     }
                 } else {
                     Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -175,25 +219,35 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         if (assist.attachments.isNotEmpty() && assist.done) {
             if (assist.suggestions.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Suggested replies") }
-                items(assist.suggestions, key = { "s${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected) }
+                items(assist.suggestions, key = { "s${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send) }
             }
             if (assist.found.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("In your images") }
-                items(assist.found, key = { "f${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected) }
+                items(assist.found, key = { "f${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send) }
             }
         } else if (s.query.isNotBlank()) {
             items(s.results, key = { it.id }) { r ->
-                ResultTile(r, s.matched[r.id].orEmpty().ifEmpty { listOf(" ") }, tap, selecting, r.id in state.selected)
+                ResultTile(r, s.matched[r.id].orEmpty().ifEmpty { listOf(" ") }, tap, selecting, r.id in state.selected, send)
             }
             if (s.related.isNotEmpty() && !s.searching) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Related") }
-                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), tap, selecting, r.id in state.selected) }
+                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), tap, selecting, r.id in state.selected, send) }
             }
+        } else {
+            items(library, key = { "l${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send) }
         }
+    }
+    if (browsing && library.isNotEmpty()) {
+        // Item 0 is the header; items 1.. are stickers, newest first, so the bubble shows their month.
+        KdsFastScroller(
+            gridState, itemCount = library.size + 1, modifier = Modifier.align(Alignment.TopEnd),
+            topInset = 96.dp, bottomInset = BottomClearance,
+            label = { i -> library.getOrNull(i - 1)?.newest?.takeIf { it > 0 }?.let { monthFmt.format(java.util.Date(it)) } },
+        )
     }
     if (selecting) {
         SelectionBar(
-            count = state.selected.size,
+            count = state.selected.size, topLabel = if (browsing) "First 30" else "Top 30",
             onTop = { actions.selectTop(visible.map { it.id }) },
             onCancel = actions.stopSelecting,
             onCreate = { naming = true },
@@ -202,7 +256,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     }
     }
     if (naming) {
-        val default = s.query.trim().ifBlank { assist.queries.firstOrNull() ?: "My stickers" }.replaceFirstChar { it.uppercase() }
+        val default = s.query.trim().ifBlank { assist.queries.firstOrNull() ?: filter.packName }.replaceFirstChar { it.uppercase() }
         NameDialog(
             title = "Create a sticker pack",
             description = "${state.selected.size} sticker${if (state.selected.size == 1) "" else "s"} selected. Static and animated stickers become separate packs, as WhatsApp requires; each needs at least ${com.kukreja.stickersearch.share.StickerPacks.MIN}.",
@@ -219,9 +273,13 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun ResultTile(r: StickerRow, why: List<String>, onTap: (StickerRow) -> Unit, selecting: Boolean = false, picked: Boolean = false) {
+private fun ResultTile(
+    r: StickerRow, why: List<String>, onTap: (StickerRow) -> Unit, selecting: Boolean = false, picked: Boolean = false,
+    onSend: ((StickerRow) -> Unit)? = null,
+) {
     Column {
-        KdsMediaTile(onClick = { onTap(r) }, label = tileLabel(r), selectable = selecting, picked = picked) {
+        KdsMediaTile(onClick = { onTap(r) }, label = tileLabel(r), selectable = selecting, picked = picked,
+            onLongClick = onSend?.let { f -> { f(r) } }) {
             Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
         }
         if (why.isNotEmpty()) {
@@ -285,5 +343,24 @@ private fun AttachmentRow(uris: List<android.net.Uri>, onRemove: (android.net.Ur
                 ) { KdsIcon(R.drawable.ic_kds_x, 12.dp, androidx.compose.ui.graphics.Color.White) }
             }
         }
+    }
+}
+
+/** The library filters shown under an empty search box. */
+internal enum class LibraryFilter(val label: String, val packName: String) {
+    ALL("All", "My stickers"),
+    ANIMATED("Animated", "Animated"),
+    LOTTIE("Lottie", "My stickers"),
+    DESCRIBED("Described", "Described"),
+    NOT_DESCRIBED("Not described", "New stickers"),
+    ATTENTION("Need a look", "My stickers");
+
+    fun matches(s: StickerRow) = when (this) {
+        ALL -> true
+        ANIMATED -> s.isAnimated && !s.isLottie()
+        LOTTIE -> s.isLottie()
+        DESCRIBED -> s.status == com.kukreja.stickersearch.data.StickerStatus.INDEXED
+        NOT_DESCRIBED -> s.status == com.kukreja.stickersearch.data.StickerStatus.PENDING
+        ATTENTION -> s.needsAttention()
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -253,16 +254,23 @@ fun KdsMediaTile(
     label: String? = null,
     selectable: Boolean = false,
     picked: Boolean = false,
+    /** Long-press action (e.g. send straight to WhatsApp); a haptic tick confirms it. */
+    onLongClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val c = Kds.colors
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val scale by animateFloatAsState(if (selectable && picked) 0.84f else 1f, tween(KdsMotion.STANDARD, easing = KdsMotion.Standard), label = "pick")
     val shape = RoundedCornerShape(if (selectable && picked) KdsRadius.xl else KdsRadius.md)
     Box(modifier.aspectRatio(1f)) {
     Box(
         Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(shape).background(c.glassClear).border(if (picked) 2.dp else 1.dp, if (picked) c.brand else c.glassBorder, shape)
-            .clickable(role = if (selectable) Role.Checkbox else Role.Image, onClick = onClick)
+            .combinedClickable(
+                role = if (selectable) Role.Checkbox else Role.Image, onClick = onClick,
+                onLongClickLabel = if (onLongClick != null) "Send in WhatsApp" else null,
+                onLongClick = onLongClick?.let { f -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); f() } },
+            )
             .semantics { if (selectable) selected = picked },
     ) {
         Box(Modifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.Center, content = content)

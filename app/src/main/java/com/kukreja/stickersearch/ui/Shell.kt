@@ -174,7 +174,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)
 }
 
-private enum class Tab { SEARCH, LIBRARY, SETTINGS }
+private enum class Tab { SEARCH, SETTINGS }
 
 @Composable
 fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchOpened: () -> Unit = {}) {
@@ -186,9 +186,8 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
     }
     KdsGround(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().statusBarsPadding()) {
-            when (Tab.entries[tab]) {
+            when (Tab.entries.getOrElse(tab) { Tab.SEARCH }) {
                 Tab.SEARCH -> SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
-                Tab.LIBRARY -> LibraryScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
                 Tab.SETTINGS -> SettingsScreen(state, actions)
             }
         }
@@ -197,8 +196,7 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
             val busy = (state.index.running && state.index.total > 0) || state.ai.running
             KdsBottomNav(
                 items = listOf(
-                    NavItem("Search", R.drawable.ic_kds_search),
-                    NavItem("Library", R.drawable.ic_kds_grid),
+                    NavItem("Stickers", R.drawable.ic_kds_search),
                     NavItem("Settings", R.drawable.ic_kds_sliders, count = if (busy) (state.ai.total - state.ai.done).takeIf { it > 0 }
                         ?: (state.index.total - state.index.done).takeIf { it > 0 } else null),
                 ),
