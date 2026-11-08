@@ -105,7 +105,7 @@ object StickerPacks {
             .putInt("${pack.id}_v", version(ctx, pack) + 1)
             .apply()
         // Files no longer in the pack are removed.
-        dir(ctx, pack).listFiles()?.forEach { f -> if (f.name != TRAY && list.none { "${it.sha}.webp" == f.name }) f.delete() }
+        dir(ctx, pack).listFiles()?.forEach { f -> if (f.name != trayName(pack) && list.none { "${it.sha}.webp" == f.name }) f.delete() }
         ensureTray(ctx, pack)
         notifyWhatsApp(ctx)
     }
@@ -213,15 +213,45 @@ object StickerPacks {
         }
     }
 
-    private fun ensureTray(ctx: Context, pack: Pack) {
-        val f = File(dir(ctx, pack), TRAY)
-        if (f.exists()) return
+    /**
+     * The tray icon file. Animated packs get their own icon (the app icon with a play badge), so
+     * the two packs are easy to tell apart in WhatsApp's sticker picker.
+     */
+    fun trayName(pack: Pack) = if (pack.animated) ANIM_TRAY else TRAY
+    private const val ANIM_TRAY = "tray_anim.png"
+
+    /** Draws the tray icon if it's missing; true when it had to be made. */
+    private fun ensureTray(ctx: Context, pack: Pack): Boolean {
+        val f = File(dir(ctx, pack), trayName(pack))
+        if (f.exists()) return false
         val bmp = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         ctx.getDrawable(R.drawable.ic_launcher_bg)?.apply { setBounds(0, 0, 96, 96); draw(c) }
         ctx.getDrawable(R.drawable.ic_launcher_fg)?.apply { setBounds(-18, -18, 114, 114); draw(c) }
+        if (pack.animated) {
+            // Play badge, bottom-right: a dark disc with a white ring and a white triangle.
+            val p = Paint(Paint.ANTI_ALIAS_FLAG)
+            p.color = android.graphics.Color.WHITE
+            c.drawCircle(70f, 70f, 25f, p)
+            p.color = android.graphics.Color.rgb(11, 20, 20)
+            c.drawCircle(70f, 70f, 22f, p)
+            p.color = android.graphics.Color.WHITE
+            val tri = android.graphics.Path().apply { moveTo(63f, 58f); lineTo(83f, 70f); lineTo(63f, 82f); close() }
+            c.drawPath(tri, p)
+        }
         f.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bmp.recycle()
+        return true
+    }
+
+    /**
+     * Makes sure the tray icon WhatsApp is about to ask for exists. Packs added before the
+     * animated icon existed get it now, with a version bump so WhatsApp refreshes the tray.
+     */
+    internal fun ensureTrayForServing(ctx: Context, pack: Pack) {
+        if (ensureTray(ctx, pack) && entries(ctx, pack).isNotEmpty()) {
+            prefs(ctx).edit().putInt("${pack.id}_v", version(ctx, pack) + 1).apply()
+        }
     }
 
     fun ensureTrays(ctx: Context) = all(ctx).forEach { ensureTray(ctx, it) }
@@ -350,8 +380,9 @@ class StickerContentProvider : ContentProvider() {
         ),
     ).apply {
         packs.forEach { p ->
+            StickerPacks.ensureTrayForServing(ctx, p)
             addRow(arrayOf<Any>(
-                p.id, p.title, "Sticker Search", StickerPacks.TRAY, "", "", "", "", "", "",
+                p.id, p.title, "Sticker Search", StickerPacks.trayName(p), "", "", "", "", "", "",
                 StickerPacks.version(ctx, p).toString(), 1, if (p.animated) 1 else 0,
             ))
         }
