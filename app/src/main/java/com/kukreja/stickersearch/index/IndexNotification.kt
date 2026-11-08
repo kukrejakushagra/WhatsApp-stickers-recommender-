@@ -33,6 +33,16 @@ object IndexNotification {
             .setProgress(total, done, total == 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .apply {
+                // While describing, the notification can pause it without opening the app.
+                if (title == AiWorker.DESCRIBE_PHASE) {
+                    val pi = android.app.PendingIntent.getBroadcast(
+                        ctx, 1, android.content.Intent(ctx, PauseReceiver::class.java),
+                        android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+                    )
+                    addAction(Notification.Action.Builder(null, "Pause describing", pi).build())
+                }
+            }
             .build()
     }
 
@@ -42,4 +52,9 @@ object IndexNotification {
     fun update(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers") {
         runCatching { ctx.getSystemService(NotificationManager::class.java).notify(ID, build(ctx, done, total, title)) }
     }
+}
+
+/** The notification's "Pause describing" button. */
+class PauseReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: android.content.Intent) = AiWorker.pause(context.applicationContext)
 }

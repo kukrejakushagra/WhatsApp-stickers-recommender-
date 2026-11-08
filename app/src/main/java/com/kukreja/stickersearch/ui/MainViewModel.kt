@@ -92,6 +92,8 @@ data class AiState(
     val lastCrashAt: Long = 0,
     /** Describing stopped after repeated crashes; Start now tries again. */
     val describePaused: Boolean = false,
+    /** The user paused describing; Resume carries on. */
+    val userPaused: Boolean = false,
 )
 
 data class ModelsState(
@@ -287,6 +289,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         lastCrash = com.kukreja.stickersearch.ml.DescribeGuard.lastCrash(ctx),
                         lastCrashAt = com.kukreja.stickersearch.ml.DescribeGuard.lastCrashAt(ctx),
                         describePaused = com.kukreja.stickersearch.ml.DescribeGuard.paused(ctx),
+                        userPaused = AiWorker.isPaused(ctx),
                     ))
                 }
             }
@@ -456,7 +459,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun runAiNow() {
         com.kukreja.stickersearch.ml.DescribeGuard.resume(ctx)
-        AiWorker.enqueue(ctx, manual = true)
+        AiWorker.resume(ctx)
+        _state.update { it.copy(ai = it.ai.copy(userPaused = false, describePaused = false)) }
+    }
+
+    fun pauseDescribing() {
+        AiWorker.pause(ctx)
+        _state.update { it.copy(ai = it.ai.copy(userPaused = true)) }
+        toast("Describing paused. Already described stickers are kept; Resume carries on from here.")
     }
 
     // ---------------- search ----------------

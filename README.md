@@ -23,7 +23,7 @@ A native Android app (Kotlin + Jetpack Compose) that indexes the WhatsApp sticke
 | Corrections | Edit any description, emotions, intents or tags. Your edits are stored separately and always win over the AI, including after re-analysis |
 | Sending | Two dynamic "Sticker Search" packs (static and animated) served through WhatsApp's documented third-party sticker-pack provider. WhatsApp asks to add each pack once (or all at once with Settings › WhatsApp packs › **Quick send**); the app remembers WhatsApp's answer, so after that **Send in WhatsApp** puts the sticker first in the pack and takes you straight back to the chat you left, where you tap the sticker icon and send it as a real sticker. "Share as photo" is the fallback |
 | Your own packs | On the Stickers tab, tap **Select**, pick up to 30 stickers (**Top 30** of the results, or **First 30** in the current filter when browsing), then **Create pack**. A mixed pick becomes a static pack and an animated pack, as WhatsApp requires, each with at least 3 stickers. WhatsApp's "Add" screen opens for each. From any sticker, **Add to pack** puts it in one of your packs. Settings › WhatsApp packs lets you rename packs, remove stickers, or delete a pack |
-| Background | Daily check while charging: scan, then visual pass, then annotation. Long runs show a progress notification (foreground media processing) |
+| Background | Daily check while charging: scan, then visual pass, then annotation. Long runs show a progress notification (foreground media processing). **Pause** (Settings › AI, or the notification's "Pause describing") stops describing until **Resume**; nothing done is lost |
 
 ## AI models (imported, not bundled)
 

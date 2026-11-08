@@ -61,7 +61,7 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
         graphPass()
         if (isStopped) return Result.success()
 
-        if (models.has(ModelKind.GEMMA)) {
+        if (models.has(ModelKind.GEMMA) && !isPaused(ctx)) {
             if (manual || isCharging(ctx)) {
                 annotatePass()
             } else {
@@ -186,7 +186,7 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
         status(applicationContext).edit().remove(KEY_GEMMA_ERROR).putString(KEY_GEMMA_BACKEND, backend).apply()
         val text = if (models.has(ModelKind.E5)) runCatching { TextEmbedder(applicationContext, models.file(ModelKind.E5)) }.getOrNull() else null
         try {
-            phase = "Understanding stickers"
+            phase = DESCRIBE_PHASE
             done = 0
             total = db.ai().countPendingAnnotation(MAX_ATTEMPTS)
             while (!isStopped) {
@@ -266,6 +266,28 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
             WorkManager.getInstance(ctx).enqueueUniqueWork(
                 name, if (manual) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, b.build(),
             )
+        }
+
+        const val KEY_PAUSED = "describe_paused_by_user"
+        const val DESCRIBE_PHASE = "Understanding stickers"
+
+        fun isPaused(ctx: Context) = status(ctx).getBoolean(KEY_PAUSED, false)
+
+        /**
+         * The user paused describing: stop the run in progress (it finishes the sticker it's on) and
+         * any run waiting for the charger, and don't start new ones until [resume].
+         */
+        fun pause(ctx: Context) {
+            status(ctx).edit().putBoolean(KEY_PAUSED, true).commit()
+            val wm = WorkManager.getInstance(ctx)
+            wm.cancelUniqueWork(UNIQUE)
+            wm.cancelUniqueWork(UNIQUE_CHARGING)
+        }
+
+        /** Carries on where it stopped: already described stickers are never redone. */
+        fun resume(ctx: Context) {
+            status(ctx).edit().putBoolean(KEY_PAUSED, false).commit()
+            enqueue(ctx, manual = true)
         }
 
         const val KEY_GEMMA_ERROR = "gemma_error"

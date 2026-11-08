@@ -54,6 +54,8 @@
             android:foregroundServiceType="mediaProcessing"
             tools:node="merge" />
 
+        <receiver android:name=".index.PauseReceiver" android:exported="false" />
+
         <!-- WhatsApp's third-party sticker-pack contract: only WhatsApp holds com.whatsapp.sticker.READ. -->
         <provider
             android:name=".share.StickerContentProvider"

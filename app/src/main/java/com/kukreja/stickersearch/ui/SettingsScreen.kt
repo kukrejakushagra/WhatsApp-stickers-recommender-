@@ -411,14 +411,38 @@ private fun AiPanel(state: UiState, actions: AppActions) {
             Spacer(Modifier.height(8.dp))
             KdsCallout("Gemma couldn't start: $it. Check that the file is gemma-3n-E2B-it-int4.task, then import it again.", CalloutTone.ERROR)
         }
+        if (ai.userPaused) {
+            Spacer(Modifier.height(8.dp))
+            KdsCallout("Describing is paused. Stickers already described are kept, and nothing runs in the background " +
+                "(not even while charging) until you resume.", CalloutTone.NEUTRAL)
+        }
         Spacer(Modifier.height(12.dp))
-        KdsButton(
-            if (ai.running) "Working" else "Start now", actions.runAiNow, variant = ButtonVariant.OUTLINE, block = true,
-            loading = ai.running, enabled = !ai.running && ModelKind.entries.any { state.models.has(it) },
-            icon = R.drawable.ic_kds_spark,
+        val describing = ai.running && ai.phase == com.kukreja.stickersearch.index.AiWorker.DESCRIBE_PHASE
+        val ready = ModelKind.entries.any { state.models.has(it) }
+        when {
+            describing -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KdsButton("Describing", {}, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                    loading = true, enabled = false, icon = R.drawable.ic_kds_spark)
+                KdsButton("Pause", actions.pauseDescribing, variant = ButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
+            }
+            ai.userPaused -> KdsButton("Resume describing", actions.runAiNow, block = true,
+                enabled = !ai.running && ready, icon = R.drawable.ic_kds_play)
+            else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KdsButton(
+                    if (ai.running) "Working" else "Start now", actions.runAiNow, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                    loading = ai.running, enabled = !ai.running && ready, icon = R.drawable.ic_kds_spark,
+                )
+                // Also stops runs waiting for the charger.
+                if (state.models.has(ModelKind.GEMMA) && (ai.running || ai.waitingForCharge || pending > 0)) {
+                    KdsButton("Pause", actions.pauseDescribing, variant = ButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+        Text(
+            if (ai.userPaused) "Resume runs now, on battery too, and carries on where it stopped."
+            else "Starting now runs on battery too; describing all stickers takes a few nights. Pause stops it until you resume; you can also pause from the notification.",
+            style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(top = 6.dp),
         )
-        Text("Starting now runs on battery too; describing all stickers takes a few nights.",
-            style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(top = 6.dp))
 
         // ---- Faster: describe on a PC ----
         Spacer(Modifier.height(18.dp))
