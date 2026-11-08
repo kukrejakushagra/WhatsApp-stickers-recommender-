@@ -48,6 +48,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -225,7 +227,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refreshModels()
         _state.update { it.copy(search = it.search.copy(recent = recentSearches())) }
         viewModelScope.launch {
-            db.stickers().observeVisible().collect { list ->
+            // Room re-runs this on every write to the stickers table (each description, each vector),
+            // mostly with identical rows: only real changes reach the UI, so scrolling stays smooth.
+            db.stickers().observeVisible().distinctUntilChanged().flowOn(Dispatchers.Default).collect { list ->
                 _state.update { s ->
                     val byId = list.associateBy { it.id }
                     s.copy(

@@ -6,6 +6,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.combinedClickable
@@ -77,7 +81,49 @@ fun KdsSettingsGroup(label: String, rows: List<@Composable () -> Unit>, modifier
     }
 }
 
-/** One setting: 20px icon, title, optional description, a control at the end. */
+/** A dotted underline under text: "there's more here, tap to read it". */
+fun Modifier.dottedUnderline(color: Color): Modifier = drawBehind {
+    val y = size.height - 1.dp.toPx()
+    val dot = 1.5.dp.toPx()
+    val gap = 3.dp.toPx()
+    var x = 0f
+    while (x < size.width) {
+        drawCircle(color, radius = dot / 2, center = androidx.compose.ui.geometry.Offset(x + dot / 2, y))
+        x += dot + gap
+    }
+}
+
+/**
+ * A label whose explanation is tucked away: the label is underlined with dots, and tapping it
+ * shows (or hides) [details] underneath. Keeps screens short without losing the help text.
+ */
+@Composable
+fun KdsInfo(
+    label: String,
+    details: String?,
+    style: androidx.compose.ui.text.TextStyle = Kds.type.bodyStrong,
+    color: Color = Kds.colors.foreground,
+    modifier: Modifier = Modifier,
+) {
+    var open by remember { mutableStateOf(false) }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            label, style = style, color = color,
+            modifier = if (details.isNullOrBlank()) Modifier
+                else Modifier.dottedUnderline(Kds.colors.mutedForeground)
+                    .clickable(role = Role.Button, onClickLabel = if (open) "Hide details" else "Show details") { open = !open },
+        )
+        androidx.compose.animation.AnimatedVisibility(visible = open && !details.isNullOrBlank()) {
+            Text(details.orEmpty(), style = Kds.type.caption, color = Kds.colors.mutedForeground)
+        }
+    }
+}
+
+/**
+ * One setting: 20px icon, title, a control at the end. The [description] is tucked behind the
+ * title (dotted underline; tap the title to read it), so the list stays scannable. Tapping
+ * anywhere else on the row still runs [onClick].
+ */
 @Composable
 fun KdsSettingsRow(
     title: String,
@@ -97,10 +143,7 @@ fun KdsSettingsRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         KdsIcon(icon, 20.dp, if (danger) c.destructiveText else c.mutedForeground)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = Kds.type.bodyStrong, color = if (danger) c.destructiveText else c.foreground)
-            description?.let { Text(it, style = Kds.type.caption, color = c.mutedForeground) }
-        }
+        KdsInfo(title, description, color = if (danger) c.destructiveText else c.foreground, modifier = Modifier.weight(1f))
         when {
             trailing != null -> trailing()
             onClick != null -> KdsIcon(R.drawable.ic_kds_chev_r, 16.dp, c.mutedForeground)

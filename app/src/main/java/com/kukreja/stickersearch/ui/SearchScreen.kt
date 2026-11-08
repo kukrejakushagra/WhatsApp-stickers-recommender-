@@ -30,6 +30,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.derivedStateOf
 import com.kukreja.stickersearch.ui.kds.KdsProgress
 import com.kukreja.stickersearch.ui.kds.KdsFastScroller
 import androidx.compose.runtime.LaunchedEffect
@@ -85,43 +87,71 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     val monthFmt = remember { java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.getDefault()) }
     // Back to the top when switching between browsing and results, or changing the filter.
     LaunchedEffect(browsing, filter) { gridState.scrollToItem(0) }
-    Box(Modifier.fillMaxSize()) {
+    val scrolled by remember { derivedStateOf { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0 } }
+    Column(Modifier.fillMaxSize()) {
+    // ---- Pinned: the search box, and the library filters (or the results line) ----
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KdsSearchField(
+                value = s.query, onValueChange = actions.onQueryChange,
+                onSearch = { if (assist.attachments.isNotEmpty()) actions.runAssist() else actions.submitSearch() },
+                placeholder = if (assist.attachments.isEmpty()) "Search %,d stickers".format(all.size).takeIf { all.isNotEmpty() } ?: "Describe what you want to say"
+                    else "Add what you want to say (optional)",
+                modifier = Modifier.weight(1f),
+            )
+            KdsIconButton(R.drawable.ic_kds_image, "Add screenshots or images", actions.attachImages)
+        }
+        if (browsing && all.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LibraryFilter.entries
+                        .filter { f -> f == LibraryFilter.ALL || f == filter || counts.getValue(f) > 0 }
+                        .forEach { f -> KdsFilterChip(f.label, filter == f, { filter = if (filter == f) LibraryFilter.ALL else f }, counts.getValue(f)) }
+                }
+                if (!selecting) { Spacer(Modifier.width(8.dp)); SelectButton(actions) }
+            }
+        } else if (s.query.isNotBlank() && assist.attachments.isEmpty()) {
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (s.searching) SpinningLoader(14.dp, Kds.colors.mutedForeground)
+                Text(modifier = Modifier.weight(1f), text =
+                    when {
+                        s.searching -> "Searching"
+                        !s.searched -> ""
+                        s.results.isEmpty() -> "No matches"
+                        else -> "%,d matches · %d ms".format(s.results.size, s.millis)
+                    },
+                    style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
+                )
+                if (s.results.isNotEmpty() && !selecting) SelectButton(actions)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+    if (scrolled) androidx.compose.material3.HorizontalDivider(thickness = 1.dp, color = Kds.colors.border)
+    Box(Modifier.fillMaxWidth().weight(1f)) {
     LazyVerticalGrid(
         GridCells.Fixed(3), Modifier.fillMaxSize(), state = gridState,
         // Extra end padding while browsing keeps the fast-scroll handle off the last column.
-        contentPadding = PaddingValues(start = 16.dp, end = if (browsing) 24.dp else 16.dp, bottom = BottomClearance + if (selecting) 112.dp else 0.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = if (browsing) 30.dp else 16.dp, bottom = BottomClearance + if (selecting) 112.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // ---- Scrolls away: everything else above the stickers ----
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
-                KdsAppBar(
-                    "Stickers", inset = 4.dp,
-                    subtitle = if (ai.total > 0) "%,d stickers · %,d described".format(ai.total, ai.annotated) else null,
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    KdsSearchField(
-                        value = s.query, onValueChange = actions.onQueryChange,
-                        onSearch = { if (assist.attachments.isNotEmpty()) actions.runAssist() else actions.submitSearch() },
-                        placeholder = if (assist.attachments.isEmpty()) "Describe what you want to say" else "Add what you want to say (optional)",
-                        modifier = Modifier.weight(1f),
-                    )
-                    KdsIconButton(R.drawable.ic_kds_image, "Add screenshots or images", actions.attachImages)
-                }
                 if (assist.attachments.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(4.dp))
                     AttachmentRow(assist.attachments, actions.removeAttachment)
                     Spacer(Modifier.height(10.dp))
                     KdsButton(
                         if (assist.running) assist.phase ?: "Working" else "Suggest stickers", actions.runAssist,
                         size = ButtonSize.LG, block = true, loading = assist.running, icon = R.drawable.ic_kds_spark,
                     )
-                    Text(
-                        "Reads the chat in your screenshots and finds a fitting reply, plus any of your stickers that appear in them. " +
-                            "Images stay on this phone.",
-                        style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(top = 6.dp),
-                    )
+                    Spacer(Modifier.height(10.dp))
                 }
-                Spacer(Modifier.height(12.dp))
                 when {
                     state.stickers.isEmpty() && state.loaded -> {
                         KdsEmptyState(R.drawable.ic_kds_folder, "No stickers yet",
@@ -131,91 +161,53 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                         "Import the AI models in Settings to search by meaning. Until then, only stickers you've described are found.",
                         CalloutTone.BRAND, title = "Search needs its models",
                     )
-                    ai.total > 0 && ai.annotated < ai.total && ai.visual == 0 -> KdsCallout(
-                        "Stickers are being prepared for search. Keep the phone charging; it works on its own.",
-                        CalloutTone.NEUTRAL,
-                    )
                 }
                 if (assist.attachments.isNotEmpty()) {
                     AssistHeader(assist, actions, selecting)
                 } else if (s.query.isBlank()) {
                     if (s.recent.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
+                        // One line: scroll sideways for more.
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             KdsIcon(R.drawable.ic_kds_history, 14.dp)
-                            Text("RECENT", style = Kds.type.overline, color = Kds.colors.mutedForeground, modifier = Modifier.weight(1f))
+                            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                s.recent.forEach { q -> KdsFilterChip(q, false, { actions.useRecent(q) }) }
+                            }
                             KdsButton("Clear", actions.clearRecent, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
                         }
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            s.recent.forEach { q -> KdsFilterChip(q, false, { actions.useRecent(q) }) }
+                    } else if (all.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("TRY", style = Kds.type.overline, color = Kds.colors.mutedForeground)
+                            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                EXAMPLES.forEach { q -> KdsFilterChip(q, false, { actions.useRecent(q) }) }
+                            }
                         }
                     }
                     if (s.recentlyUsed.isNotEmpty()) {
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(12.dp))
                         Text("RECENTLY USED", style = Kds.type.overline, color = Kds.colors.mutedForeground)
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(6.dp))
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             s.recentlyUsed.forEach { r ->
-                                KdsMediaTile(onClick = { onOpen(r) }, modifier = Modifier.size(84.dp), label = tileLabel(r), onLongClick = { actions.sendViaWhatsApp(r) },
+                                KdsMediaTile(onClick = { tap(r) }, modifier = Modifier.size(84.dp), label = tileLabel(r), onLongClick = send?.let { f -> { f(r) } },
                                     actionIcon = R.drawable.ic_kds_send, actionLabel = "Send in WhatsApp",
-                                    onAction = if (r.isLottie() || r.primaryUri == null) null else ({ actions.sendViaWhatsApp(r) }),
-                                    actionBusy = state.sendingId == r.id) {
+                                    onAction = if (r.isLottie() || r.primaryUri == null) null else send?.let { f -> { f(r) } },
+                                    actionBusy = state.sendingId == r.id, selectable = selecting, picked = r.id in state.selected) {
                                     Thumb(r.thumbnailPath, Modifier.fillMaxSize())
                                 }
                             }
                         }
                     }
-                    if (s.recent.isEmpty() && state.stickers.isNotEmpty()) {
-                        Spacer(Modifier.height(16.dp))
-                        Text("TRY", style = Kds.type.overline, color = Kds.colors.mutedForeground)
-                        Spacer(Modifier.height(8.dp))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            EXAMPLES.forEach { q -> KdsFilterChip(q, false, { actions.useRecent(q) }) }
-                        }
-                    }
-                    if (all.isNotEmpty()) {
-                        Spacer(Modifier.height(18.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("ALL STICKERS · NEWEST FIRST", style = Kds.type.overline, color = Kds.colors.mutedForeground, modifier = Modifier.weight(1f))
-                            if (!selecting) SelectButton(actions)
-                        }
-                        if (state.index.running && state.index.total > 0) {
-                            Spacer(Modifier.height(8.dp))
-                            KdsProgress(state.index.done.toFloat() / state.index.total)
-                            Text("Indexing %,d of %,d".format(state.index.done, state.index.total),
-                                style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
-                                modifier = Modifier.padding(top = 4.dp))
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            LibraryFilter.entries
-                                .filter { f -> f == LibraryFilter.ALL || f == filter || counts.getValue(f) > 0 }
-                                .forEach { f -> KdsFilterChip(f.label, filter == f, { filter = if (filter == f) LibraryFilter.ALL else f }, counts.getValue(f)) }
-                        }
-                        Text("Tap a sticker for details · tap its send button (or long-press it) to send it in WhatsApp",
-                            style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
-                    }
-                } else {
-                    Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (s.searching) SpinningLoader(14.dp, Kds.colors.mutedForeground)
-                        Text(modifier = Modifier.weight(1f), text = 
-                            when {
-                                s.searching -> "Searching"
-                                !s.searched -> ""
-                                s.results.isEmpty() -> "No matches"
-                                else -> "%,d matches · %d ms".format(s.results.size, s.millis)
-                            },
+                    if (state.index.running && state.index.total > 0) {
+                        Spacer(Modifier.height(10.dp))
+                        KdsProgress(state.index.done.toFloat() / state.index.total)
+                        Text("Indexing %,d of %,d".format(state.index.done, state.index.total),
                             style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
-                        )
-                        if (s.results.isNotEmpty() && !selecting) SelectButton(actions)
+                            modifier = Modifier.padding(top = 4.dp))
                     }
-                    if (s.searched && !s.searching && s.results.isEmpty()) {
-                        KdsEmptyState(R.drawable.ic_kds_search, "Nothing matched",
-                            "Try other words, or fewer of them. Describing a few stickers yourself also helps.")
-                    }
+                    if (all.isNotEmpty()) Spacer(Modifier.height(10.dp))
+                } else if (s.searched && !s.searching && s.results.isEmpty()) {
+                    KdsEmptyState(R.drawable.ic_kds_search, "Nothing matched",
+                        "Try other words, or fewer of them. Describing a few stickers yourself also helps.")
                 }
             }
         }
@@ -244,7 +236,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         // Item 0 is the header; items 1.. are stickers, newest first, so the bubble shows their month.
         KdsFastScroller(
             gridState, itemCount = library.size + 1, modifier = Modifier.align(Alignment.TopEnd),
-            topInset = 96.dp, bottomInset = BottomClearance,
+            topInset = 4.dp, bottomInset = BottomClearance,
             label = { i -> library.getOrNull(i - 1)?.newest?.takeIf { it > 0 }?.let { monthFmt.format(java.util.Date(it)) } },
         )
     }
@@ -256,6 +248,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
             onCreate = { naming = true },
             modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = BottomClearance - 8.dp),
         )
+    }
     }
     }
     if (naming) {
@@ -302,7 +295,7 @@ private fun AssistHeader(assist: AssistState, actions: AppActions, selecting: Bo
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         assist.reading?.let { KdsCallout(it, CalloutTone.BRAND, title = "What's going on") }
         if (assist.queries.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 assist.queries.forEach { q -> KdsFilterChip(q, false, { actions.clearAssist(); actions.useRecent(q) }) }
             }
         }

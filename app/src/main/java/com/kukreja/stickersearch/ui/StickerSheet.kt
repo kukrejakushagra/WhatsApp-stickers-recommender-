@@ -82,13 +82,19 @@ internal fun tileLabel(s: StickerRow) = when {
     else -> null
 }
 
-private val thumbCache = LruCache<String, ImageBitmap>(400)
+/** Decoded thumbnails, capped by bytes (not count) so a long scroll can't balloon memory and stall on GC. */
+private val thumbCache = object : LruCache<String, ImageBitmap>(48 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
+}
 
 @Composable
 internal fun Thumb(path: String?, modifier: Modifier, @DrawableRes placeholder: Int = R.drawable.ic_kds_image) {
     val bmp by produceState(path?.let { thumbCache.get(it) }, path) {
         if (path != null && value == null) {
-            value = withContext(Dispatchers.IO) { BitmapFactory.decodeFile(path)?.asImageBitmap()?.also { thumbCache.put(path, it) } }
+            value = withContext(Dispatchers.IO) {
+                // prepareToDraw uploads the pixels off the main thread, so the first frame doesn't hitch.
+                BitmapFactory.decodeFile(path)?.also { it.prepareToDraw() }?.asImageBitmap()?.also { thumbCache.put(path, it) }
+            }
         }
     }
     val b = bmp

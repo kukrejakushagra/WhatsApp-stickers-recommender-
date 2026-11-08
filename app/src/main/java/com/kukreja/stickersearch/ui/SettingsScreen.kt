@@ -37,6 +37,7 @@ import com.kukreja.stickersearch.ui.kds.CalloutTone
 import com.kukreja.stickersearch.ui.kds.KdsAppBar
 import com.kukreja.stickersearch.ui.kds.KdsBadge
 import com.kukreja.stickersearch.ui.kds.KdsButton
+import com.kukreja.stickersearch.ui.kds.KdsInfo
 import com.kukreja.stickersearch.ui.kds.KdsCallout
 import com.kukreja.stickersearch.ui.kds.KdsDialog
 import com.kukreja.stickersearch.ui.kds.KdsPanel
@@ -59,7 +60,7 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
     state.packs.firstOrNull { it.pack.id == openPack }?.let { info -> PackSheet(info, state, actions) { openPack = null } }
     val pickedStickersOnly = p.safHeld && p.safTreeId?.endsWith("WhatsApp Stickers") == true
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        KdsAppBar("Settings", subtitle = "Everything runs on this phone")
+        KdsAppBar("Settings")
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = BottomClearance), verticalArrangement = Arrangement.spacedBy(20.dp)) {
 
             // ---- Library ----
@@ -92,11 +93,11 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 KdsCallout("You picked WhatsApp Stickers only, so the stickers in Backup Excluded Stickers are missed. Pick Media instead.",
                     CalloutTone.WARNING, title = "One folder is missing")
             }
-            ScanPanel(state, actions)
+            StatusPanel(state, actions)
 
             // ---- AI ----
             ModelsGroup(state, actions) { kind -> confirm = "model:${kind.name}" }
-            AiPanel(state, actions)
+            PcPanel(state, actions)
 
             // ---- WhatsApp ----
             val quickReady = state.packs.filter { !it.pack.custom }.all { it.added }
@@ -125,7 +126,7 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                     )
                 }
             })
-            Text("Make your own pack from a search: tap Select above the results, pick up to ${StickerPacks.MAX}, then Create pack.",
+            KdsInfo("Make your own pack", "On the Stickers tab, tap Select, pick up to ${StickerPacks.MAX} stickers, then Create pack.",
                 style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(horizontal = 4.dp))
 
             // ---- Background ----
@@ -244,52 +245,6 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
 }
 
 @Composable
-private fun ScanPanel(state: UiState, actions: AppActions) {
-    val p = state.permissions
-    val canScan = p.safHeld || p.allFiles
-    val ix = state.index
-    KdsPanel {
-        when {
-            ix.running -> {
-                Text(ix.phase ?: "Starting", style = Kds.type.bodyStrong, color = Kds.colors.foreground)
-                Spacer(Modifier.height(10.dp))
-                KdsProgress(ix.total.takeIf { it > 0 }?.let { ix.done.toFloat() / it })
-                Spacer(Modifier.height(6.dp))
-                Text(if (ix.total > 0) "%,d of %,d new or changed files".format(ix.done, ix.total) else "Listing files",
-                    style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground)
-            }
-            state.indexedCount > 0 -> {
-                Text("%,d stickers indexed".format(state.indexedCount), style = Kds.type.heading, color = Kds.colors.foreground)
-                Text(buildList {
-                    if (state.failedCount > 0) add("%,d failed".format(state.failedCount))
-                    if (state.reviewCount > 0) add("%,d to review".format(state.reviewCount))
-                    if (state.missingCount > 0) add("%,d missing".format(state.missingCount))
-                    state.lastRun?.let { add("last scan %d s".format((it.finishedAt - it.startedAt) / 1000)) }
-                }.joinToString(" · "), style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground)
-            }
-            else -> Text("No scan yet", style = Kds.type.bodyStrong, color = Kds.colors.foreground)
-        }
-        ix.error?.let {
-            Spacer(Modifier.height(10.dp))
-            KdsCallout("$it. Check the folder access above, then scan again.", CalloutTone.ERROR)
-        }
-        if (!ix.running) {
-            Spacer(Modifier.height(14.dp))
-            KdsButton(
-                text = when { !canScan -> "Pick a folder to start"; state.indexedCount > 0 -> "Scan for changes"; else -> "Run scan" },
-                onClick = { actions.scan(false) }, size = ButtonSize.LG, block = true, enabled = canScan,
-                icon = if (state.indexedCount > 0) R.drawable.ic_kds_refresh else R.drawable.ic_kds_search,
-            )
-            if (state.failedCount + state.reviewCount > 0) {
-                Spacer(Modifier.height(6.dp))
-                KdsButton("Retry %,d with problems".format(state.failedCount + state.reviewCount), { actions.scan(true) },
-                    variant = ButtonVariant.GHOST, block = true)
-            }
-        }
-    }
-}
-
-@Composable
 private fun ModelsGroup(state: UiState, actions: AppActions, onRemove: (ModelKind) -> Unit) {
     val m = state.models
     val ready = m.readyCount
@@ -300,7 +255,8 @@ private fun ModelsGroup(state: UiState, actions: AppActions, onRemove: (ModelKin
         )
         if (ready < ModelKind.entries.size) {
             KdsProgress(ready.toFloat() / ModelKind.entries.size)
-            Text(
+            KdsInfo(
+                "How to add the models",
                 "For each model: tap Download, which opens your browser. When the file has finished downloading, tap Import " +
                     "next to it and pick the file from Downloads. The app itself never goes online.",
                 style = Kds.type.caption, color = Kds.colors.mutedForeground,
@@ -328,17 +284,16 @@ private fun ModelRow(step: Int, kind: ModelKind, state: UiState, actions: AppAct
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(kind.title, style = Kds.type.bodyStrong, color = c.foreground, modifier = Modifier.weight(1f, fill = false))
+                KdsInfo(kind.title, kind.purpose + if (ready) " · imported, ${mb(m.present[kind] ?: 0)}" else "",
+                    modifier = Modifier.weight(1f, fill = false))
                 if (ready) KdsBadge("Ready", BadgeTone.SOFT) else KdsBadge("Not imported", BadgeTone.SECONDARY)
             }
-            Text(kind.purpose, style = Kds.type.caption, color = c.mutedForeground)
             if (ready) {
-                Text("Imported · ${mb(m.present[kind] ?: 0)}", style = Kds.type.caption, color = c.mutedForeground)
                 KdsButton("Remove", { onRemove(kind) }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
             } else {
                 Text("File: ${kind.downloadName} · about ${if (kind.approxMb >= 1000) "%.1f GB".format(kind.approxMb / 1000.0) else "${kind.approxMb} MB"}",
                     style = Kds.type.mono, color = c.foreground)
-                Text(kind.downloadNote, style = Kds.type.caption, color = c.mutedForeground)
+                KdsInfo("Download notes", kind.downloadNote, style = Kds.type.caption, color = c.mutedForeground)
                 Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     KdsButton("Download", { actions.openUrl(kind.downloadUrl) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM,
@@ -357,101 +312,132 @@ private fun ModelRow(step: Int, kind: ModelKind, state: UiState, actions: AppAct
     }
 }
 
+/**
+ * One place for where your stickers stand: how many are indexed, searchable by look and
+ * described, what's running now, and the buttons to scan and to describe. Explanations sit
+ * behind dotted labels.
+ */
 @Composable
-private fun AiPanel(state: UiState, actions: AppActions) {
+private fun StatusPanel(state: UiState, actions: AppActions) {
+    val p = state.permissions
+    val canScan = p.safHeld || p.allFiles
+    val ix = state.index
     val ai = state.ai
     val c = ai.counts
     val pending = state.statusCounts[StickerStatus.PENDING] ?: 0
     KdsPanel {
-        Text("Search readiness", style = Kds.type.heading, color = Kds.colors.foreground)
+        Text("Your stickers", style = Kds.type.heading, color = Kds.colors.foreground)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Stat("%,d".format(state.indexedCount), "indexed")
             Stat("%,d".format(c.visual), "by look")
             Stat("%,d".format(c.annotated), "described")
-            Stat("%,d".format(c.total), "total")
         }
         if (c.total > 0) {
             Spacer(Modifier.height(10.dp))
             KdsProgress(c.annotated.toFloat() / c.total)
         }
         Spacer(Modifier.height(8.dp))
+        // One line on what's happening now.
         Text(
             when {
+                ix.running -> "${ix.phase ?: "Scanning"}: " + if (ix.total > 0) "%,d of %,d files".format(ix.done, ix.total) else "listing files"
                 ai.running -> "${ai.phase ?: "Working"}: %,d of %,d".format(ai.done, ai.total)
-                ai.waitingForCharge -> "%,d left to describe. Continues when the phone is charging.".format(pending)
-                pending > 0 && state.models.has(ModelKind.GEMMA) -> "%,d left to describe. Runs while charging, or start it now.".format(pending)
-                pending > 0 -> "%,d left to describe once Gemma is imported.".format(pending)
-                else -> "Everything is described."
+                ai.userPaused -> "Describing paused · %,d left".format(pending)
+                ai.waitingForCharge -> "%,d left to describe · continues when charging".format(pending)
+                pending > 0 && state.models.has(ModelKind.GEMMA) -> "%,d left to describe · runs while charging".format(pending)
+                pending > 0 -> "%,d left to describe once Gemma is imported".format(pending)
+                state.indexedCount == 0 -> "No scan yet"
+                else -> "Everything is described"
             },
-            style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
+            style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.foreground,
         )
-        if (state.graph.isNotEmpty()) {
-            val g = state.graph
-            Text(
-                "Connections: %,d story links · %,d look-alikes · %,d shared topics".format(
-                    g[com.kukreja.stickersearch.data.EdgeType.STORY] ?: 0, g[com.kukreja.stickersearch.data.EdgeType.LOOKS] ?: 0,
-                    g[com.kukreja.stickersearch.data.EdgeType.TOPIC] ?: 0,
-                ),
-                style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground,
-            )
+        if (ix.running && ix.total > 0) {
+            Spacer(Modifier.height(6.dp))
+            KdsProgress(ix.done.toFloat() / ix.total)
         }
-        ai.gemmaBackend?.let { b ->
-            val per = if (ai.lastAnnotationMs > 0) " · about %.0f s per sticker".format(ai.lastAnnotationMs / 1000.0) else ""
-            Text("Gemma runs on the $b$per", style = Kds.type.caption, color = Kds.colors.mutedForeground)
+        val details = buildList {
+            if (state.failedCount > 0) add("%,d failed".format(state.failedCount))
+            if (state.reviewCount > 0) add("%,d to review".format(state.reviewCount))
+            if (state.missingCount > 0) add("%,d missing".format(state.missingCount))
+            state.lastRun?.let { add("last scan took %d s".format((it.finishedAt - it.startedAt) / 1000)) }
+            ai.gemmaBackend?.let { b -> add("Gemma on the $b" + if (ai.lastAnnotationMs > 0) ", about %.0f s per sticker".format(ai.lastAnnotationMs / 1000.0) else "") }
+            if (state.graph.isNotEmpty()) {
+                val g = state.graph
+                add("%,d story links, %,d look-alikes, %,d shared topics".format(
+                    g[com.kukreja.stickersearch.data.EdgeType.STORY] ?: 0, g[com.kukreja.stickersearch.data.EdgeType.LOOKS] ?: 0,
+                    g[com.kukreja.stickersearch.data.EdgeType.TOPIC] ?: 0))
+            }
+        }
+        if (details.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            KdsInfo("Details", details.joinToString(" · "), style = Kds.type.caption, color = Kds.colors.mutedForeground)
+        }
+
+        // Problems stay visible: they need you.
+        ix.error?.let {
+            Spacer(Modifier.height(10.dp))
+            KdsCallout("$it. Check the folder access above, then scan again.", CalloutTone.ERROR)
         }
         if (ai.describePaused) {
             Spacer(Modifier.height(8.dp))
-            KdsCallout("Describing is paused: the app closed ${com.kukreja.stickersearch.ml.DescribeGuard.PAUSE_AFTER} times in a row while Gemma was working " +
-                "(last: ${ai.lastCrash ?: "unknown"}). It now uses the CPU and less memory. Close other apps, then tap Start now to try again.", CalloutTone.ERROR)
+            KdsCallout("Describing stopped after the app closed ${com.kukreja.stickersearch.ml.DescribeGuard.PAUSE_AFTER} times in a row " +
+                "(last: ${ai.lastCrash ?: "unknown"}). Close other apps, then tap Start now.", CalloutTone.ERROR)
         } else if (ai.lastCrash != null && System.currentTimeMillis() - ai.lastCrashAt < 86_400_000L) {
             Spacer(Modifier.height(8.dp))
-            KdsCallout("The app closed while Gemma was working (${ai.lastCrash}). That sticker was skipped and Gemma moved to safer settings.", CalloutTone.WARNING)
+            KdsCallout("The app closed while Gemma was working (${ai.lastCrash}). That sticker was skipped.", CalloutTone.WARNING)
         }
         ai.gemmaError?.let {
             Spacer(Modifier.height(8.dp))
-            KdsCallout("Gemma couldn't start: $it. Check that the file is gemma-3n-E2B-it-int4.task, then import it again.", CalloutTone.ERROR)
+            KdsCallout("Gemma couldn't start: $it. Import gemma-3n-E2B-it-int4.task again.", CalloutTone.ERROR)
         }
-        if (ai.userPaused) {
-            Spacer(Modifier.height(8.dp))
-            KdsCallout("Describing is paused. Stickers already described are kept, and nothing runs in the background " +
-                "(not even while charging) until you resume.", CalloutTone.NEUTRAL)
-        }
-        Spacer(Modifier.height(12.dp))
+
+        Spacer(Modifier.height(14.dp))
         val describing = ai.running && ai.phase == com.kukreja.stickersearch.index.AiWorker.DESCRIBE_PHASE
         val ready = ModelKind.entries.any { state.models.has(it) }
-        when {
-            describing -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                KdsButton("Describing", {}, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
-                    loading = true, enabled = false, icon = R.drawable.ic_kds_spark)
-                KdsButton("Pause", actions.pauseDescribing, variant = ButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
-            }
-            ai.userPaused -> KdsButton("Resume describing", actions.runAiNow, block = true,
-                enabled = !ai.running && ready, icon = R.drawable.ic_kds_play)
-            else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                KdsButton(
-                    if (ai.running) "Working" else "Start now", actions.runAiNow, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
-                    loading = ai.running, enabled = !ai.running && ready, icon = R.drawable.ic_kds_spark,
-                )
-                // Also stops runs waiting for the charger.
-                if (state.models.has(ModelKind.GEMMA) && (ai.running || ai.waitingForCharge || pending > 0)) {
-                    KdsButton("Pause", actions.pauseDescribing, variant = ButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
-                }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KdsButton(
+                text = when { ix.running -> "Scanning"; !canScan -> "Pick a folder"; state.indexedCount > 0 -> "Scan"; else -> "Run scan" },
+                onClick = { actions.scan(false) }, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                enabled = canScan && !ix.running, loading = ix.running,
+                icon = if (state.indexedCount > 0) R.drawable.ic_kds_refresh else R.drawable.ic_kds_search,
+            )
+            when {
+                describing -> KdsButton("Pause", actions.pauseDescribing, variant = ButtonVariant.SECONDARY, modifier = Modifier.weight(1f))
+                ai.userPaused -> KdsButton("Resume", actions.runAiNow, modifier = Modifier.weight(1f),
+                    enabled = !ai.running && ready, icon = R.drawable.ic_kds_play)
+                else -> KdsButton(if (ai.running) "Working" else "Describe now", actions.runAiNow, modifier = Modifier.weight(1f),
+                    loading = ai.running, enabled = !ai.running && ready, icon = R.drawable.ic_kds_spark)
             }
         }
-        Text(
-            if (ai.userPaused) "Resume runs now, on battery too, and carries on where it stopped."
-            else "Starting now runs on battery too; describing all stickers takes a few nights. Pause stops it until you resume; you can also pause from the notification.",
-            style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(top = 6.dp),
-        )
-
-        // ---- Faster: describe on a PC ----
-        Spacer(Modifier.height(18.dp))
-        Text("Faster: describe on a PC", style = Kds.type.bodyStrong, color = Kds.colors.foreground)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Export the %,d undescribed stickers to a file, copy it to your computer and run the script inside it with a local AI model (Ollama). It takes hours instead of nights. Then import results.jsonl here. Your stickers only go where you copy them; nothing is uploaded."
-                .format(pending + (state.statusCounts[StickerStatus.NEEDS_REVIEW] ?: 0)),
+        if (!ix.running && state.failedCount + state.reviewCount > 0) {
+            KdsButton("Retry %,d with problems".format(state.failedCount + state.reviewCount), { actions.scan(true) },
+                variant = ButtonVariant.GHOST, block = true)
+        }
+        if (!describing && !ai.userPaused && state.models.has(ModelKind.GEMMA) && (ai.waitingForCharge || pending > 0)) {
+            KdsButton("Pause describing", actions.pauseDescribing, variant = ButtonVariant.GHOST, block = true)
+        }
+        Spacer(Modifier.height(6.dp))
+        KdsInfo(
+            "How this works",
+            "Scan finds new and removed stickers. Describing runs overnight while charging; Describe now runs it on battery too " +
+                "(a few nights for all of them). Pause stops it until you resume, also from the notification. " +
+                "Nothing is redone: described stickers are kept.",
             style = Kds.type.caption, color = Kds.colors.mutedForeground,
+        )
+    }
+}
+
+/** Describe on a PC: export, run the script at home, import the results. */
+@Composable
+private fun PcPanel(state: UiState, actions: AppActions) {
+    val left = (state.statusCounts[StickerStatus.PENDING] ?: 0) + (state.statusCounts[StickerStatus.NEEDS_REVIEW] ?: 0)
+    KdsPanel {
+        KdsInfo(
+            "Faster: describe on a PC",
+            ("Export the %,d undescribed stickers to a file, copy it to your computer and run describe.py inside it with a local AI " +
+                "model (Ollama); the README in the file explains each step. It takes hours instead of nights. Then import " +
+                "results.jsonl here. Your stickers only go where you copy them; nothing is uploaded.").format(left),
         )
         Spacer(Modifier.height(10.dp))
         state.pcProgress?.let {
@@ -462,9 +448,9 @@ private fun AiPanel(state: UiState, actions: AppActions) {
             Spacer(Modifier.height(10.dp))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KdsButton("Export for PC", actions.exportForPc, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+            KdsButton("Export", actions.exportForPc, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
                 icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null)
-            KdsButton("Import PC results", actions.importPcResults, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+            KdsButton("Import results", actions.importPcResults, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
                 icon = R.drawable.ic_kds_folder, enabled = state.pcProgress == null)
         }
     }
