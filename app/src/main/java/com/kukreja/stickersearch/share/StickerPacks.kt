@@ -143,7 +143,7 @@ object StickerPacks {
     fun add(ctx: Context, sha: String, bytes: ByteArray, animated: Boolean, emoji: String): Prepared {
         val pack = if (animated) Pack.ANIMATED else Pack.STATIC
         prepareFile(ctx, pack, sha, bytes)?.let { return Prepared.NotEligible(it) }
-        saveEntries(ctx, pack, (listOf(Entry(sha, emoji.ifBlank { "🙂" })) + entries(ctx, pack).filter { it.sha != sha }).take(MAX))
+        saveEntries(ctx, pack, (listOf(Entry(sha, safeEmoji(emoji))) + entries(ctx, pack).filter { it.sha != sha }).take(MAX))
         return Prepared.Ok(pack)
     }
 
@@ -160,7 +160,7 @@ object StickerPacks {
             if (list.size >= MAX) { full++; continue }
             val problem = prepareFile(ctx, pack, sha, bytes)
             if (problem != null) { skipped += problem; continue }
-            list += Entry(sha, emoji.ifBlank { "🙂" })
+            list += Entry(sha, safeEmoji(emoji))
             added++
         }
         saveEntries(ctx, pack, list)
@@ -175,7 +175,7 @@ object StickerPacks {
         for ((sha, bytes, emoji) in candidates) {
             if (list.size >= MIN) break
             if (list.any { it.sha == sha }) continue
-            if (prepareFile(ctx, pack, sha, bytes) == null) list += Entry(sha, emoji)
+            if (prepareFile(ctx, pack, sha, bytes) == null) list += Entry(sha, safeEmoji(emoji))
         }
         saveEntries(ctx, pack, list)
     }
@@ -247,6 +247,37 @@ object StickerPacks {
         return prefs(ctx).getBoolean("${pack.id}_added", false)
     }
 
+    /** The pack version WhatsApp last read the sticker list of (0: never seen it read). */
+    fun lastReadVersion(ctx: Context, pack: Pack) = prefs(ctx).getInt("${pack.id}_read_v", 0)
+
+    /**
+     * Called from the provider when WhatsApp reads a pack's sticker list. Logged once per version,
+     * so the diagnostics report shows whether WhatsApp picks up changes by itself.
+     */
+    internal fun markRead(ctx: Context, pack: Pack) {
+        val v = version(ctx, pack)
+        if (lastReadVersion(ctx, pack) == v) return
+        prefs(ctx).edit().putInt("${pack.id}_read_v", v).putLong("${pack.id}_read_at", System.currentTimeMillis()).apply()
+        runCatching {
+            com.kukreja.stickersearch.diagnostics.EventLog(File(ctx.filesDir, "events.jsonl"))
+                .add("whatsapp_read", mapOf("pack" to pack.id, "version" to v, "stickers" to entries(ctx, pack).size))
+        }
+    }
+
+    /**
+     * WhatsApp rejects a whole pack if one sticker's emoji isn't a real emoji, so anything else
+     * (words, several emoji, a cut-off character) becomes 🙂.
+     */
+    fun safeEmoji(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return "🙂"
+        val it = java.text.BreakIterator.getCharacterInstance().apply { setText(t) }
+        val first = t.substring(0, it.next().coerceAtLeast(1))
+        val cp = first.codePointAt(0)
+        val emojiLike = Character.getType(cp) == Character.OTHER_SYMBOL.toInt() || cp in 0x1F000..0x1FAFF || cp in 0x2600..0x27BF
+        return if (emojiLike) first else "🙂"
+    }
+
     fun markAdded(ctx: Context, pack: Pack, added: Boolean) =
         prefs(ctx).edit().putBoolean("${pack.id}_added", added).apply()
 
@@ -300,8 +331,9 @@ class StickerContentProvider : ContentProvider() {
             METADATA_SINGLE -> metadata(ctx, listOfNotNull(StickerPacks.pack(ctx, uri.lastPathSegment ?: "")))
             STICKERS -> {
                 val pack = StickerPacks.pack(ctx, uri.lastPathSegment ?: "") ?: return null
+                StickerPacks.markRead(ctx, pack)
                 MatrixCursor(arrayOf("sticker_file_name", "sticker_emoji", "sticker_accessibility_text")).apply {
-                    StickerPacks.entries(ctx, pack).forEach { addRow(arrayOf("${it.sha}.webp", it.emoji, "Sticker")) }
+                    StickerPacks.entries(ctx, pack).forEach { addRow(arrayOf("${it.sha}.webp", StickerPacks.safeEmoji(it.emoji), "Sticker")) }
                     setNotificationUri(ctx.contentResolver, uri)
                 }
             }

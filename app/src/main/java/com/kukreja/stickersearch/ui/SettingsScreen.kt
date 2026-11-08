@@ -114,7 +114,8 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                     KdsSettingsRow(
                         title = pack.title, icon = if (pack.custom) R.drawable.ic_kds_folder else R.drawable.ic_kds_phone,
                         description = when {
-                            info.added -> "In WhatsApp's sticker picker · %d stickers%s".format(info.count, if (pack.custom) "" else ", last sent first")
+                            info.added -> if (pack.custom) "In WhatsApp's sticker picker · %d stickers".format(info.count)
+                                else "In WhatsApp · your latest %d of %d sent, newest first; older ones drop off".format(info.count, StickerPacks.MAX)
                             info.count >= StickerPacks.MIN -> "%d stickers ready to add to WhatsApp.".format(info.count)
                             pack.custom -> "%d sticker%s. Add at least %d to send it to WhatsApp.".format(info.count, if (info.count == 1) "" else "s", StickerPacks.MIN)
                             else -> "Appears in WhatsApp after you send your first ${if (pack.animated) "animated " else ""}sticker."

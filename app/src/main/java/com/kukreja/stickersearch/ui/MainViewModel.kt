@@ -716,6 +716,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (s.formatEnum() == StickerFormat.LOTTIE_WAS) {
                 return@launch toast("WhatsApp only accepts WebP in third-party packs, so Lottie stickers can't be sent this way.")
             }
+            // Did WhatsApp pick up the previous change to this pack by itself? If not, it isn't
+            // re-reading on its own, and it's asked to (via its Add screen) before it opens.
+            val kindPack = if (s.isAnimated) StickerPacks.Pack.ANIMATED else StickerPacks.Pack.STATIC
+            val missedLast = StickerPacks.lastReadVersion(ctx, kindPack) < StickerPacks.version(ctx, kindPack)
             val result = withContext(Dispatchers.IO) {
                 val bytes = ctx.contentResolver.openInputStream(Uri.parse(uri))?.use { it.readBytes() }
                     ?: return@withContext StickerPacks.Prepared.NotEligible("The sticker file couldn't be read.")
@@ -750,6 +754,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         } catch (e: ActivityNotFoundException) {
                             pendingPack = null; openAfterAdd = false
                             events.add("pack_send", mapOf("step" to "no_whatsapp", "error" to e.message))
+                            toast("WhatsApp didn't open. Check it is installed, then try again.")
+                        }
+                    } else if (missedLast) {
+                        // WhatsApp hasn't re-read the pack since it last changed: showing it the pack again
+                        // makes it read the current stickers. Then WhatsApp opens.
+                        events.add("pack_send", mapOf("step" to "refresh", "pack" to result.pack.id,
+                            "version" to StickerPacks.version(ctx, result.pack), "lastRead" to StickerPacks.lastReadVersion(ctx, result.pack)))
+                        pendingPack = result.pack
+                        openAfterAdd = true
+                        try {
+                            askToAdd(StickerPacks.addToWhatsAppIntent(ctx, result.pack))
+                            toast("Updating the ${result.pack.title} pack in WhatsApp…")
+                        } catch (e: ActivityNotFoundException) {
+                            pendingPack = null; openAfterAdd = false
                             toast("WhatsApp didn't open. Check it is installed, then try again.")
                         }
                     } else if (StickerPacks.openWhatsApp(activity)) {
