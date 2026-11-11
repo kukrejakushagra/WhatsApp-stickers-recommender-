@@ -431,7 +431,8 @@ private fun StatusPanel(state: UiState, actions: AppActions) {
 /** Describe on a PC: export, run the script at home, import the results. */
 @Composable
 private fun PcPanel(state: UiState, actions: AppActions) {
-    val left = (state.statusCounts[StickerStatus.PENDING] ?: 0) + (state.statusCounts[StickerStatus.NEEDS_REVIEW] ?: 0)
+    val left = (state.statusCounts[StickerStatus.PENDING] ?: 0) + (state.statusCounts[StickerStatus.NEEDS_REVIEW] ?: 0) +
+        (state.statusCounts[StickerStatus.FAILED] ?: 0)
     KdsPanel {
         KdsInfo(
             "Faster: describe on a PC",
@@ -447,12 +448,24 @@ private fun PcPanel(state: UiState, actions: AppActions) {
             }
             Spacer(Modifier.height(10.dp))
         }
+        val everything = state.indexedCount
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KdsButton("Export", actions.exportForPc, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
-                icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null)
-            KdsButton("Import results", actions.importPcResults, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
-                icon = R.drawable.ic_kds_folder, enabled = state.pcProgress == null)
+            KdsButton("Export %,d new".format(left), { actions.exportForPc(false) }, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null && left > 0)
+            KdsButton("Export all %,d".format(everything), { actions.exportForPc(true) }, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null && everything > 0)
         }
+        Spacer(Modifier.height(8.dp))
+        KdsButton("Import results", actions.importPcResults, block = true,
+            icon = R.drawable.ic_kds_folder, enabled = state.pcProgress == null)
+        Spacer(Modifier.height(6.dp))
+        KdsInfo(
+            "New or all?",
+            "Export new: only stickers not described yet. Export all: the PC redoes the phone's descriptions too, and " +
+                "its versions replace them on import. Your own edits always stay on top. Describing on the phone pauses " +
+                "after an export, since the PC's results will replace its work.",
+            style = Kds.type.caption, color = Kds.colors.mutedForeground,
+        )
     }
 }
 

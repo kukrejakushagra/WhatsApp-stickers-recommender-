@@ -22,15 +22,27 @@ to a model running on your own computer.
 
        python describe.py sticker-search-export.zip
 
-   It shows progress and time left. Stop it with Ctrl+C whenever you like; running the same
-   command again carries on where it stopped. Results go into results.jsonl in this folder.
+   (On Windows, if "python" isn't found, use "py describe.py sticker-search-export.zip".)
+
+   It shows progress and time left. Results go into results.jsonl in this folder.
 
 4. Copy results.jsonl to your phone (USB, or any way you like), then in Sticker Search open
-   Settings > AI > Import PC results and pick it. Search uses the new descriptions straight away;
+   Settings > "Faster: describe on a PC" > Import results and pick it. Search uses the new descriptions straight away;
    the meaning-search vectors and related-sticker links are added in the background.
+
+Pausing and continuing
+----------------------
+- Press Ctrl+C to pause. It finishes the stickers it's working on, saves them, and tells you
+  how many are done. (Press Ctrl+C a second time to quit straight away.)
+- Import results.jsonl on the phone whenever you like, even when only part is done.
+- To carry on, run the same command again. It skips everything already in results.jsonl.
+- Importing the same file again later is fine: stickers already imported are skipped.
+- Want results while it's still running? Copy results-snapshot.jsonl instead (updated every
+  50 stickers; always complete). The phone imports it the same way.
 
 Other local servers (LM Studio, llama.cpp server, vLLM) work too:
 
        python describe.py sticker-search-export.zip --api openai --url http://localhost:1234/v1 --model <name>
 
-Stickers already described on the phone, or ones you've edited, are never overwritten.
+PC descriptions replace ones the phone made (a bigger model usually does better). Your own edits
+in the app always stay on top.

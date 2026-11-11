@@ -258,6 +258,15 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
             return s == BatteryManager.BATTERY_STATUS_CHARGING || s == BatteryManager.BATTERY_STATUS_FULL
         }
 
+        /**
+         * After a PC import: vectors and graph for the new descriptions. Queued behind any run in
+         * progress (which may have passed its text step already) instead of being dropped.
+         */
+        fun enqueueAfterImport(ctx: Context) {
+            val b = OneTimeWorkRequestBuilder<AiWorker>().setInputData(workDataOf(KEY_MANUAL to false))
+            WorkManager.getInstance(ctx).enqueueUniqueWork(UNIQUE, ExistingWorkPolicy.APPEND_OR_REPLACE, b.build())
+        }
+
         /** [manual]: the user asked, so annotation runs even on battery. */
         fun enqueue(ctx: Context, manual: Boolean, whenCharging: Boolean = false) {
             val b = OneTimeWorkRequestBuilder<AiWorker>().setInputData(workDataOf(KEY_MANUAL to manual))

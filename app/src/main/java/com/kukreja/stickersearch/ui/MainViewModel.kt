@@ -424,11 +424,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------- describe on a PC ----------------
 
-    fun exportForPc(out: Uri) {
+    fun exportForPc(out: Uri, all: Boolean) {
         if (_state.value.pcProgress != null) return
         // Keep write access after this screen goes away: the export runs as a background job.
         runCatching { ctx.contentResolver.takePersistableUriPermission(out, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
-        com.kukreja.stickersearch.index.PcExportWorker.enqueue(ctx, out)
+        com.kukreja.stickersearch.index.PcExportWorker.enqueue(ctx, out, all)
         _state.update { it.copy(pcProgress = "Preparing the export") }
         toast("Exporting in the background. You can leave the app; the notification shows progress.")
     }
@@ -459,8 +459,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                     val n = o.getInt(W.KEY_WRITTEN, 0); val t = o.getInt(W.KEY_TOTAL, 0)
                                     val skipped = o.getString(W.KEY_SKIPPED).orEmpty()
                                     if (t == 0) "Every sticker is already described; nothing to export."
-                                    else "Exported %,d of %,d stickers%s. Copy the file to your PC and follow README.txt inside it."
-                                        .format(n, t, if (skipped.isNotBlank()) " (skipped: $skipped)" else "")
+                                    else {
+                                        // The PC's descriptions will replace the phone's, so the phone stops spending hours on them.
+                                        val pausedNow = !AiWorker.isPaused(ctx)
+                                        if (pausedNow) { AiWorker.pause(ctx); _state.update { it.copy(ai = it.ai.copy(userPaused = true)) } }
+                                        "Exported %,d of %,d stickers%s. Copy the file to your PC and follow README.txt inside it.%s"
+                                            .format(n, t, if (skipped.isNotBlank()) " (skipped: $skipped)" else "",
+                                                if (pausedNow) " Describing on the phone is paused meanwhile; Resume in Settings restarts it." else "")
+                                    }
                                 }
                                 androidx.work.WorkInfo.State.CANCELLED -> "The export was stopped, and the unfinished file was removed."
                                 else -> "The export didn't finish: ${o.getString(W.KEY_ERROR) ?: "unknown error"}. The unfinished file was removed; try again."
@@ -474,20 +480,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun importPcResults(src: Uri) {
         if (_state.value.pcProgress != null) return
         viewModelScope.launch(Dispatchers.IO) {
-            _state.update { it.copy(pcProgress = "Importing descriptions") }
-            runCatching { com.kukreja.stickersearch.index.PcBridge.import(ctx, db, repo, src) }
-                .onSuccess { r ->
-                    events.add("pc_import", mapOf("saved" to r.saved, "unreadable" to r.unreadable, "unknown" to r.unknown, "already" to r.alreadyDescribed))
-                    toast(buildString {
-                        append("Imported %,d descriptions.".format(r.saved))
-                        if (r.alreadyDescribed > 0) append(" %,d were already described on the phone.".format(r.alreadyDescribed))
-                        if (r.unreadable > 0) append(" %,d couldn't be read.".format(r.unreadable))
-                        if (r.unknown > 0) append(" %,d aren't in this library.".format(r.unknown))
-                    })
-                    // Meaning-search vectors and the related-stickers graph for the new descriptions.
-                    if (r.saved > 0) AiWorker.enqueue(ctx, manual = false)
+            _state.update { it.copy(pcProgress = "Reading the results") }
+            runCatching {
+                com.kukreja.stickersearch.index.PcBridge.import(ctx, db, repo, src) { d, t ->
+                    _state.update { it.copy(pcProgress = "Importing %,d of %,d".format(d, t)) }
                 }
-                .onFailure { toast("Import failed: ${it.message}") }
+            }.onSuccess { r ->
+                events.add("pc_import", mapOf("saved" to r.saved, "replacedPhone" to r.replacedPhone, "already" to r.alreadyImported,
+                    "unreadable" to r.unreadable, "unknown" to r.unknown, "cutOffTail" to r.cutOffTail))
+                toast(buildString {
+                    append(if (r.saved == 0 && r.alreadyImported > 0) "Nothing new: all %,d were already imported.".format(r.alreadyImported)
+                        else "Imported %,d descriptions.".format(r.saved))
+                    val notes = buildList {
+                        if (r.replacedPhone > 0) add("%,d replaced the phone's own".format(r.replacedPhone))
+                        if (r.alreadyImported > 0 && r.saved > 0) add("%,d already imported".format(r.alreadyImported))
+                        if (r.unreadable > 0) add("%,d couldn't be read".format(r.unreadable))
+                        if (r.unknown > 0) add("%,d aren't in this library".format(r.unknown))
+                    }
+                    if (notes.isNotEmpty()) append(" (").append(notes.joinToString(", ")).append(")")
+                    if (r.saved > 0) append(" Search vectors and related stickers update in the background.")
+                    append(" Importing the same file again later is safe.")
+                })
+                // Text vectors (cleared for every new description) and the graph, after any run in progress.
+                if (r.saved > 0) AiWorker.enqueueAfterImport(ctx)
+            }.onFailure { toast("Import failed: ${it.message}") }
             _state.update { it.copy(pcProgress = null) }
         }
     }

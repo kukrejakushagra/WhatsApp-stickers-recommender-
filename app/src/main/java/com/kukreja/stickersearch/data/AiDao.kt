@@ -64,8 +64,12 @@ interface AiDao {
     suspend fun countPendingVisual(): Int
 
     /** Not described yet, including ones the phone gave up on: what the PC export offers. */
-    @Query("SELECT * FROM stickers WHERE status IN ('PENDING', 'NEEDS_REVIEW') ORDER BY id")
+    @Query("SELECT * FROM stickers WHERE status IN ('PENDING', 'NEEDS_REVIEW', 'FAILED') ORDER BY id")
     suspend fun undescribed(): List<StickerEntity>
+
+    /** Every sticker still on the phone, for an export where the PC redoes the phone's descriptions too. */
+    @Query("SELECT * FROM stickers WHERE status != 'MISSING' ORDER BY id")
+    suspend fun allForPc(): List<StickerEntity>
 
     @Query("SELECT COUNT(*) FROM stickers WHERE status = 'PENDING' AND attempts < :maxAttempts")
     suspend fun countPendingAnnotation(maxAttempts: Int): Int

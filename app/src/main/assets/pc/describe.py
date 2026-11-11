@@ -5,8 +5,11 @@ Sticker Search: describe your stickers on a PC, then import the results on the p
     python describe.py sticker-search-export.zip
 
 Runs a vision model on this computer (Ollama by default) over every sticker in the export,
-using the same prompt as the phone, and writes results.jsonl next to the zip. Stop it any time
-(Ctrl+C) and run the same command again: it carries on where it stopped.
+using the same prompt as the phone, and writes results.jsonl next to the zip.
+
+Pause any time with Ctrl+C: the stickers in progress are finished and saved first. You can then
+import results.jsonl on the phone, and later run the same command again to carry on where it
+stopped. While it's running, results-snapshot.jsonl is a complete copy you can take any time.
 
 Only the Python standard library is needed (Python 3.9+). Your stickers stay on this computer:
 the script talks only to a model server on this machine or your home network, and refuses
@@ -17,6 +20,7 @@ import base64
 import ipaddress
 import json
 import os
+import signal
 import socket
 import sys
 import threading
@@ -25,7 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 DEFAULT_MODEL = "gemma3:12b"
 
@@ -110,6 +114,12 @@ def main() -> None:
     p.add_argument("--out", default=None, help="results file (default results.jsonl next to the zip)")
     p.add_argument("--allow-remote", action="store_true", help="allow a model server that isn't on this machine or your home network")
     args = p.parse_args()
+    # Windows consoles (or redirected output) may not have "›" or "·": print a stand-in, never crash.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     args.url = args.url or ("http://localhost:11434" if args.api == "ollama" else "http://localhost:1234/v1")
 
     if not is_local(args.url) and not args.allow_remote:
@@ -121,6 +131,8 @@ def main() -> None:
     zf = zipfile.ZipFile(args.export)
     manifest = json.loads(zf.read("manifest.json"))
     out_path = args.out or os.path.join(os.path.dirname(os.path.abspath(args.export)), "results.jsonl")
+    snapshot_path = os.path.join(os.path.dirname(os.path.abspath(out_path)), "results-snapshot.jsonl")
+    repair_tail(out_path)
     done = set()
     if os.path.exists(out_path):
         with open(out_path, encoding="utf-8") as f:
@@ -133,13 +145,17 @@ def main() -> None:
     if args.limit:
         todo = todo[:args.limit]
     total = len(manifest["items"])
-    print(f"{total} stickers in the export, {len(done)} already done, {len(todo)} to describe with {args.model}.")
+    earlier = sum(1 for it in manifest["items"] if it["sha256"] in done)
+    if earlier:
+        print(f"{earlier:,} already done from earlier runs; {len(todo):,} to go, with {args.model}.")
+    else:
+        print(f"{total:,} stickers to describe with {args.model}. Press Ctrl+C any time to pause.")
     if not todo:
         print(f"Nothing left. Copy {out_path} to your phone and import it.")
         return
 
     ask = ask_ollama if args.api == "ollama" else ask_openai
-    zip_lock, out_lock = threading.Lock(), threading.Lock()
+    zip_lock = threading.Lock()
     started = time.time()
     finished = failed = 0
 
@@ -154,34 +170,107 @@ def main() -> None:
                 break
         return item, raw, time.time() - t0
 
-    with open(out_path, "a", encoding="utf-8") as out, ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
-        futures = [pool.submit(describe, it) for it in todo]
-        try:
-            for fut in as_completed(futures):
+    # First Ctrl+C: pause (finish and save the stickers in progress). Second: quit at once.
+    stop = threading.Event()
+
+    def on_ctrl_c(_sig, _frame):
+        if stop.is_set():
+            print("\nQuitting now. Everything saved so far stays in results.jsonl.", flush=True)
+            os._exit(130)
+        stop.set()
+        print("\nPausing: finishing the stickers in progress and saving them (Ctrl+C again to quit at once)...", flush=True)
+
+    signal.signal(signal.SIGINT, on_ctrl_c)
+
+    workers = max(1, args.workers)
+    pending = iter(todo)
+    in_flight = set()
+    since_snapshot = 0
+    with open(out_path, "a", encoding="utf-8") as out, ThreadPoolExecutor(max_workers=workers) as pool:
+        def start_next() -> None:
+            # Only as many requests as workers are ever in flight, so pausing loses nothing.
+            if stop.is_set():
+                return
+            item = next(pending, None)
+            if item is not None:
+                in_flight.add(pool.submit(describe, item))
+
+        for _ in range(workers):
+            start_next()
+        while in_flight:
+            finished_now, _ = wait(in_flight, timeout=0.5, return_when=FIRST_COMPLETED)
+            for fut in finished_now:
+                in_flight.discard(fut)
                 try:
                     item, raw, secs = fut.result()
                 except Exception as e:  # one bad reply shouldn't stop the run
                     failed += 1
-                    print(f"  skipped one: {e}", file=sys.stderr)
+                    print(f"\n  skipped one: {e}", file=sys.stderr)
+                    start_next()
                     continue
                 if not readable(raw):
                     failed += 1
+                    start_next()
                     continue
-                with out_lock:
-                    out.write(json.dumps({"sha256": item["sha256"], "model": args.model, "raw": raw,
-                                          "seconds": round(secs, 1)}, ensure_ascii=False) + "\n")
-                    out.flush()
+                line = json.dumps({"sha256": item["sha256"], "model": args.model, "raw": raw,
+                                   "prompt_version": manifest.get("prompt_version", 1),
+                                   "seconds": round(secs, 1)}, ensure_ascii=False) + "\n"
+                # One write per sticker, pushed to disk, so a copy taken now is at worst one line short.
+                out.write(line)
+                out.flush()
+                os.fsync(out.fileno())
                 finished += 1
+                since_snapshot += 1
                 rate = (time.time() - started) / finished
+                # rate is wall-clock time per sticker, so it already reflects parallel workers.
                 left = (len(todo) - finished - failed) * rate
-                print(f"\r  {finished + len(done)}/{total} described · {rate:.1f} s each · about {left / 60:.0f} min left   ",
-                      end="", flush=True)
-        except KeyboardInterrupt:
-            print("\nStopped. Run the same command again to carry on.")
-            pool.shutdown(wait=False, cancel_futures=True)
+                if not stop.is_set():
+                    print(f"\r  {finished + earlier:,}/{total:,} described · {rate:.1f} s each · about {left / 60:.0f} min left   ",
+                          end="", flush=True)
+                start_next()
+            if since_snapshot >= 50:
+                write_snapshot(out_path, snapshot_path)
+                since_snapshot = 0
+    write_snapshot(out_path, snapshot_path)
+
+    described = finished + earlier
+    if stop.is_set() and described < total:
+        print(f"\nPaused: {described:,} of {total:,} described and saved in results.jsonl.")
+        print("You can import results.jsonl on the phone now (Settings › Faster: describe on a PC › Import results).")
+        print("To continue, run the same command again; it picks up where it stopped.")
+        return
+    print(f"\nDone: {described:,} of {total:,} described"
+          + (f", {failed} couldn't be read (run again to retry them)." if failed else "."))
+    print(f"Copy {out_path} to your phone, then in Sticker Search open Settings › Faster: describe on a PC › Import results.")
+
+
+def repair_tail(path: str) -> None:
+    """If a run was cut off mid-line, drop the half-written last line so new lines don't join onto it."""
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return
+    with open(path, "rb+") as f:
+        f.seek(-1, os.SEEK_END)
+        if f.read(1) == b"\n":
             return
-    print(f"\nDone: {finished} described, {failed} couldn't be read (run again to retry them).")
-    print(f"Copy {out_path} to your phone, then in Sticker Search open Settings › AI › Import PC results.")
+        f.seek(0)
+        data = f.read()
+        f.seek(data.rfind(b"\n") + 1)
+        f.truncate()
+
+
+def write_snapshot(src: str, dest: str) -> None:
+    """A complete copy of the results so far, safe to copy to the phone even while the script runs."""
+    if not os.path.exists(src):
+        return
+    tmp = dest + ".tmp"
+    with open(src, "rb") as f:
+        data = f.read()
+    data = data[:data.rfind(b"\n") + 1]
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, dest)
 
 
 if __name__ == "__main__":

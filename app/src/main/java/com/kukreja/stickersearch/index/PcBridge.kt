@@ -6,6 +6,7 @@ import android.net.Uri
 import com.kukreja.stickersearch.data.AnnotationRepository
 import com.kukreja.stickersearch.data.StickerDatabase
 import com.kukreja.stickersearch.data.StickerStatus
+import androidx.room.withTransaction
 import com.kukreja.stickersearch.ml.Annotation
 import com.kukreja.stickersearch.ml.GemmaAnnotator
 import org.json.JSONArray
@@ -33,8 +34,11 @@ object PcBridge {
      * copied to [out], so the user never gets a half-written zip. Throws if anything goes wrong;
      * the caller deletes [out] then.
      */
-    suspend fun export(ctx: Context, db: StickerDatabase, out: Uri, onProgress: suspend (Int, Int) -> Unit): ExportResult {
-        val todo = db.ai().undescribed()
+    suspend fun export(
+        ctx: Context, db: StickerDatabase, out: Uri, all: Boolean = false, onProgress: suspend (Int, Int) -> Unit,
+    ): ExportResult {
+        // "all": the PC redoes stickers the phone already described too (its descriptions win on import).
+        val todo = if (all) db.ai().allForPc() else db.ai().undescribed()
         // Rough room needed: about 60 KB per sticker in the temp copy, plus a margin.
         val need = todo.size * 60L * 1024 + 20L * 1024 * 1024
         if (ctx.cacheDir.usableSpace < need) {
@@ -50,6 +54,10 @@ object PcBridge {
                 ctx.assets.open("pc/README.txt").use { zip.put("README.txt", it.readBytes()) }
                 todo.forEachIndexed { i, s ->
                     if (i % 10 == 0) onProgress(i, todo.size)
+                    // Contact sheets vary in size: keep checking there's room, and stop cleanly if not.
+                    if (i % 100 == 0 && ctx.cacheDir.usableSpace < 30L * 1024 * 1024) {
+                        error("The phone's storage is full. Free some space and export again.")
+                    }
                     val frames = runCatching { StickerImages.load(ctx, db, s, preferOriginal = true) }.getOrElse { emptyList() }
                     if (frames.isEmpty()) {
                         val why = if (s.format == "LOTTIE_WAS") "Lottie with no readable frames" else "no picture could be read"
@@ -89,32 +97,41 @@ object PcBridge {
         }
     }
 
-    data class ImportResult(val saved: Int, val unreadable: Int, val unknown: Int, val alreadyDescribed: Int)
+    data class ImportResult(
+        val saved: Int, val replacedPhone: Int, val alreadyImported: Int,
+        val unreadable: Int, val unknown: Int, val cutOffTail: Boolean,
+    )
 
     /**
-     * Reads results.jsonl: one {"sha256", "model", "raw"} per line, "raw" being the model's reply.
-     * Stickers already described on the phone, or edited by the user, are left as they are.
+     * Reads results.jsonl: one {"sha256", "model", "raw", "prompt_version"} per line, "raw" being
+     * the model's reply. PC descriptions replace the phone's own (a bigger model usually does
+     * better); the user's edits are a separate layer and still win. Lines already imported from
+     * the same PC model are skipped, so importing the same file again is harmless.
+     * Saved in batches inside one transaction each, so the app refreshes once per batch.
      */
-    suspend fun import(ctx: Context, db: StickerDatabase, repo: AnnotationRepository, src: Uri): ImportResult {
-        var saved = 0; var unreadable = 0; var unknown = 0; var already = 0
-        val input = ctx.contentResolver.openInputStream(src) ?: error("Couldn't open that file.")
-        input.bufferedReader().useLines { lines ->
-            for (line in lines) {
-                if (line.isBlank()) continue
-                val o = runCatching { JSONObject(line) }.getOrNull()
-                if (o == null) { unreadable++; continue }
-                val sha = o.optString("sha256")
-                val s = db.stickers().bySha(sha)
-                if (s == null) { unknown++; continue }
-                if (s.status == StickerStatus.INDEXED) { already++; continue }
-                val raw = o.optJSONObject("annotation")?.toString() ?: o.optString("raw")
-                val a = Annotation.parse(raw)
-                if (a == null) { unreadable++; continue }
-                val model = o.optString("model").ifBlank { "pc" }.take(60)
-                repo.saveModel(s.id, a, "pc:$model", GemmaAnnotator.PROMPT_VERSION)
-                saved++
+    suspend fun import(
+        ctx: Context, db: StickerDatabase, repo: AnnotationRepository, src: Uri, onProgress: (Int, Int) -> Unit = { _, _ -> },
+    ): ImportResult {
+        val text = (ctx.contentResolver.openInputStream(src) ?: error("Couldn't open that file.")).bufferedReader().use { it.readLines() }
+        val parsed = PcResults.parse(text)
+        var saved = 0; var replaced = 0; var already = 0; var unknown = 0; var unreadable = parsed.unreadable
+        parsed.lines.chunked(200).forEachIndexed { batch, lines ->
+            onProgress(batch * 200, parsed.lines.size)
+            db.withTransaction {
+                for (l in lines) {
+                    val s = db.stickers().bySha(l.sha256)
+                    if (s == null) { unknown++; continue }
+                    val tag = "pc:${l.model}"
+                    if (s.status == StickerStatus.INDEXED && s.annotatorModel == tag) { already++; continue }
+                    val a = Annotation.parse(l.raw)
+                    if (a == null) { unreadable++; continue }
+                    if (s.status == StickerStatus.INDEXED && s.annotatorModel?.startsWith("pc:") != true) replaced++
+                    repo.saveModel(s.id, a, tag, l.promptVersion ?: GemmaAnnotator.PROMPT_VERSION)
+                    saved++
+                }
             }
         }
-        return ImportResult(saved, unreadable, unknown, already)
+        onProgress(parsed.lines.size, parsed.lines.size)
+        return ImportResult(saved, replaced, already, unreadable, unknown, parsed.cutOffTail)
     }
 }
