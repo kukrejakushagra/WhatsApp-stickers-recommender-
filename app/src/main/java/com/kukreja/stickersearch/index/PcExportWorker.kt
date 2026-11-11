@@ -28,7 +28,7 @@ class PcExportWorker(context: Context, params: WorkerParameters) : CoroutineWork
         runCatching { setForeground(IndexNotification.info(ctx, 0, 0, TITLE, IndexNotification.TARGET_PC)) }
         val events = EventLog(File(ctx.filesDir, "events.jsonl"))
         return try {
-            val r = PcBridge.export(ctx, StickerDatabase.get(ctx), out, all = inputData.getBoolean(KEY_ALL, false)) { done, total ->
+            val r = PcBridge.export(ctx, StickerDatabase.get(ctx), out) { done, total ->
                 setProgress(workDataOf(KEY_DONE to done, KEY_TOTAL to total))
                 IndexNotification.update(ctx, done, total, TITLE, IndexNotification.TARGET_PC)
             }
@@ -61,15 +61,14 @@ class PcExportWorker(context: Context, params: WorkerParameters) : CoroutineWork
         const val UNIQUE = "pc-export"
         const val TITLE = "Exporting for PC"
         const val KEY_URI = "uri"
-        const val KEY_ALL = "all"
         const val KEY_DONE = "done"
         const val KEY_TOTAL = "total"
         const val KEY_WRITTEN = "written"
         const val KEY_SKIPPED = "skipped"
         const val KEY_ERROR = "error"
 
-        fun enqueue(ctx: Context, out: Uri, all: Boolean) {
-            val req = OneTimeWorkRequestBuilder<PcExportWorker>().setInputData(workDataOf(KEY_URI to out.toString(), KEY_ALL to all)).build()
+        fun enqueue(ctx: Context, out: Uri) {
+            val req = OneTimeWorkRequestBuilder<PcExportWorker>().setInputData(workDataOf(KEY_URI to out.toString())).build()
             WorkManager.getInstance(ctx).enqueueUniqueWork(UNIQUE, ExistingWorkPolicy.KEEP, req)
         }
     }

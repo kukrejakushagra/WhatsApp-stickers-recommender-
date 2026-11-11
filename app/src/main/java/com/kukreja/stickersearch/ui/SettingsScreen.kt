@@ -469,9 +469,9 @@ private fun PcPanel(state: UiState, actions: AppActions) {
     KdsPanel {
         KdsInfo(
             "Faster: describe on a PC",
-            ("Export the %,d undescribed stickers to a file, copy it to your computer and run describe.py inside it with a local AI " +
-                "model (Ollama); the README in the file explains each step. It takes hours instead of nights. Then import " +
-                "results.jsonl here. Your stickers only go where you copy them; nothing is uploaded.").format(left),
+            ("Export your stickers to a file (%,d aren't described yet), copy it to your computer, extract it and double-click " +
+                "the starter inside; it runs a local AI model (Ollama), and the README explains each step. It takes hours instead " +
+                "of nights. Then import results.jsonl here. Your stickers only go where you copy them; nothing is uploaded.").format(left),
         )
         Spacer(Modifier.height(10.dp))
         state.pcProgress?.let {
@@ -481,13 +481,8 @@ private fun PcPanel(state: UiState, actions: AppActions) {
             }
             Spacer(Modifier.height(10.dp))
         }
-        val everything = state.indexedCount
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KdsButton("Export %,d new".format(left), { actions.exportForPc(false) }, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
-                icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null && left > 0)
-            KdsButton("Export all %,d".format(everything), { actions.exportForPc(true) }, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
-                icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null && everything > 0)
-        }
+        KdsButton("Export for PC", actions.exportForPc, variant = ButtonVariant.OUTLINE, block = true,
+            icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null && state.indexedCount > 0)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KdsButton("Import results", actions.importPcResults, modifier = Modifier.weight(1f),
@@ -497,12 +492,12 @@ private fun PcPanel(state: UiState, actions: AppActions) {
         }
         Spacer(Modifier.height(6.dp))
         KdsInfo(
-            "New, all, or share?",
-            "Export new: only stickers not described yet. Export all: the PC redoes the phone's descriptions too, and " +
-                "its versions replace them on import. Your own edits always stay on top. Describing on the phone pauses " +
-                "after an export, since the PC's results will replace its work. Share descriptions saves everything " +
-                "described here (and your edits) to a file; on another phone, Import results adds them to the same " +
-                "stickers, matched by each file's fingerprint, so nothing is described twice.",
+            "What goes in the export?",
+            "Every sticker, each marked as not described yet, described by your phone's AI, or described on a PC before. " +
+                "The script on your computer asks whether to redo the phone's ones too (a PC model usually does better, and " +
+                "its descriptions replace the phone's on import). Your own edits always stay on top. Describing on the phone " +
+                "pauses after an export. Share descriptions saves everything described here (and your edits) to a file; on " +
+                "another phone, Import results adds them to the same stickers, matched by each file's fingerprint.",
             style = Kds.type.caption, color = Kds.colors.mutedForeground,
         )
     }

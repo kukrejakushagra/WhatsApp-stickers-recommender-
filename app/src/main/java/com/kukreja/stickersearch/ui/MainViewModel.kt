@@ -437,11 +437,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------- describe on a PC ----------------
 
-    fun exportForPc(out: Uri, all: Boolean) {
+    fun exportForPc(out: Uri) {
         if (_state.value.pcProgress != null) return
         // Keep write access after this screen goes away: the export runs as a background job.
         runCatching { ctx.contentResolver.takePersistableUriPermission(out, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
-        com.kukreja.stickersearch.index.PcExportWorker.enqueue(ctx, out, all)
+        com.kukreja.stickersearch.index.PcExportWorker.enqueue(ctx, out)
         _state.update { it.copy(pcProgress = "Preparing the export") }
         toast("Exporting in the background. You can leave the app; the notification shows progress.")
     }

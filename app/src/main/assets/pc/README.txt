@@ -26,7 +26,9 @@ Run it
    your stickers never leave this PC):
      1) gemma3:12b  best; needs a graphics card with about 10 GB of memory, or a Mac with 16 GB
      2) gemma3:4b   faster; for laptops and modest PCs
-   Your choice is remembered for next time.
+   Your choice is remembered for next time. It also asks whether to redo the stickers your
+   phone's AI already described (a PC model usually does better). That answer is remembered
+   too; start with --ask-again to be asked again.
 4. It shows progress and the time left. Results are saved in this folder as results.jsonl.
 
 Too slow, or Ollama keeps stopping? The model is probably too big for this PC's memory (the

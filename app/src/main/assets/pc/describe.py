@@ -253,6 +253,55 @@ class Export:
             return f.read()
 
 
+def _yes_no(question: str, default: bool) -> bool:
+    hint = "[Y/n]" if default else "[y/N]"
+    while True:
+        a = input(f"{question} {hint} ").strip().lower()
+        if not a:
+            return default
+        if a in ("y", "yes"):
+            return True
+        if a in ("n", "no"):
+            return False
+
+
+def choose_items(items: list, args, settings: dict, interactive: bool) -> list:
+    """
+    The export marks who described each sticker (described_by: none yet, "phone", "pc", "shared").
+    New ones are always done; whether to redo the phone's (and earlier PC/shared) ones is asked once
+    and remembered in settings.json. New ones come first, so a pause leaves the gaps filled.
+    """
+    new = [it for it in items if not it.get("described_by")]
+    phone = [it for it in items if it.get("described_by") == "phone"]
+    other = [it for it in items if it.get("described_by") in ("pc", "shared")]
+    if not phone and not other:
+        return new  # older exports, or nothing described yet: nothing to ask
+    print(f"{len(items):,} stickers in this export: {len(new):,} not described yet, {len(phone):,} described by your "
+          f"phone's AI, {len(other):,} described on a PC or another phone before.")
+
+    def decide(key: str, flag, count: int, question: str, default: bool) -> bool:
+        if flag is not None:
+            settings[key] = flag
+        elif key not in settings:
+            if interactive:
+                settings[key] = _yes_no(question, default)
+            else:
+                settings[key] = default
+                what = "described by your phone's AI" if key == "redo_phone" else "described on a PC or another phone before"
+                print(f"  ({'Including' if default else 'Skipping'} the {count:,} {what}; "
+                      f"use --include-{key[5:]} or --skip-{key[5:]} to choose.)")
+        return bool(settings[key])
+
+    redo_phone = bool(phone) and decide(
+        "redo_phone", args.phone_choice, len(phone),
+        f"Also describe the {len(phone):,} your phone's AI described? A PC model usually does better, and its "
+        "descriptions replace the phone's when you import.", True)
+    redo_other = bool(other) and decide(
+        "redo_other", args.other_choice, len(other),
+        f"Redo the {len(other):,} described on a PC or another phone before?", False)
+    return new + (phone if redo_phone else []) + (other if redo_other else [])
+
+
 def load_settings(folder: str) -> dict:
     try:
         with open(os.path.join(folder, "settings.json"), encoding="utf-8") as f:
@@ -282,6 +331,13 @@ def main(interactive: bool) -> None:
     p.add_argument("--workers", type=int, default=1, help="stickers in parallel (raise it if your server handles parallel requests)")
     p.add_argument("--limit", type=int, default=0, help="stop after this many stickers (to try it out)")
     p.add_argument("--choose-model", action="store_true", help="pick the model again (e.g. switch to the faster gemma3:4b)")
+    p.add_argument("--include-phone", dest="phone_choice", action="store_const", const=True, default=None,
+                   help="also describe the stickers your phone's AI described (replacing them on import)")
+    p.add_argument("--skip-phone", dest="phone_choice", action="store_const", const=False, help="leave the phone's descriptions as they are")
+    p.add_argument("--include-other", dest="other_choice", action="store_const", const=True, default=None,
+                   help="also redo stickers described on a PC or another phone before")
+    p.add_argument("--skip-other", dest="other_choice", action="store_const", const=False, help="leave those as they are")
+    p.add_argument("--ask-again", action="store_true", help="forget the saved answers about which stickers to redo")
     p.add_argument("--prompt", choices=["pc", "app"], default="pc",
                    help="pc (default): a detailed look-first prompt for bigger models; app: the phone's shorter prompt")
     p.add_argument("--timeout", type=float, default=300, help="seconds to wait for one reply")
@@ -297,6 +353,9 @@ def main(interactive: bool) -> None:
     export = Export(args.export)
     manifest = export.manifest
     settings = load_settings(export.folder)
+    if args.ask_again:
+        settings.pop("redo_phone", None)
+        settings.pop("redo_other", None)
     if args.api == "ollama":
         names = ollama_models(args.url)
         if args.model:
@@ -328,13 +387,15 @@ def main(interactive: bool) -> None:
                     done.add(json.loads(line)["sha256"])
                 except (ValueError, KeyError):
                     pass
-    todo = [it for it in manifest["items"] if it["sha256"] not in done]
+    selected = choose_items(manifest["items"], args, settings, interactive)
+    save_settings(export.folder, settings)
+    todo = [it for it in selected if it["sha256"] not in done]
     if args.limit:
         todo = todo[:args.limit]
-    total = len(manifest["items"])
-    earlier = sum(1 for it in manifest["items"] if it["sha256"] in done)
+    total = len(selected)
+    earlier = sum(1 for it in selected if it["sha256"] in done)
     if not todo:
-        print(f"All {total:,} stickers are described. Copy results.jsonl from this folder to your phone and import it.")
+        print(f"All {total:,} chosen stickers are described. Copy results.jsonl from this folder to your phone and import it.")
         return
     pause_hint = "Press Enter to pause" if interactive else "Press Ctrl+C to pause"
     if earlier:

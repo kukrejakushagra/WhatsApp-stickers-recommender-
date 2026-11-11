@@ -35,10 +35,12 @@ object PcBridge {
      * the caller deletes [out] then.
      */
     suspend fun export(
-        ctx: Context, db: StickerDatabase, out: Uri, all: Boolean = false, onProgress: suspend (Int, Int) -> Unit,
+        ctx: Context, db: StickerDatabase, out: Uri, onProgress: suspend (Int, Int) -> Unit,
     ): ExportResult {
-        // "all": the PC redoes stickers the phone already described too (its descriptions win on import).
-        val todo = if (all) db.ai().allForPc() else db.ai().undescribed()
+        // Every sticker, each marked with who described it; describe.py asks which ones to (re)do.
+        val todo = db.ai().allForPc()
+        val edited = db.ai().allCorrections().mapTo(HashSet()) { it.stickerId }
+        val counts = linkedMapOf("new" to 0, "phone" to 0, "pc" to 0, "shared" to 0)
         // Rough room needed: about 60 KB per sticker in the temp copy, plus a margin.
         val need = todo.size * 60L * 1024 + 20L * 1024 * 1024
         if (ctx.cacheDir.usableSpace < need) {
@@ -82,7 +84,11 @@ object PcBridge {
                         .put("animated", motion)
                         .put("frames", if (motion) minOf(frames.size, 4) else 1)
                         .put("duration_ms", s.durationMs ?: JSONObject.NULL)
-                        .put("prompt", GemmaAnnotator.prompt(motion, s.durationMs)))
+                        .put("prompt", GemmaAnnotator.prompt(motion, s.durationMs))
+                        .put("described_by", describedBy(s.status, s.annotatorModel) ?: JSONObject.NULL)
+                        .put("edited", s.id in edited))
+                    val who = describedBy(s.status, s.annotatorModel) ?: "new"
+                    counts[who] = (counts[who] ?: 0) + 1
                 }
                 zip.finish(JSONObject()
                     .put("format", FORMAT)
@@ -91,6 +97,7 @@ object PcBridge {
                     // describe.py builds its own, more detailed prompt from these.
                     .put("emotions_vocab", JSONArray(com.kukreja.stickersearch.ml.Annotation.EMOTIONS))
                     .put("intents_vocab", JSONArray(com.kukreja.stickersearch.ml.Annotation.INTENTS))
+                    .put("counts", JSONObject(counts as Map<*, *>))
                     .put("created_ms", System.currentTimeMillis())
                     .put("items", items)
                     .toString().toByteArray())
@@ -104,6 +111,17 @@ object PcBridge {
         } finally {
             temp.delete()
         }
+    }
+
+    /**
+     * Who described a sticker, for the export: null (not yet), "phone" (this phone's own AI),
+     * "pc" (described on a computer and imported), or "shared" (imported from another phone).
+     */
+    fun describedBy(status: StickerStatus, annotatorModel: String?): String? = when {
+        status != StickerStatus.INDEXED -> null
+        annotatorModel?.startsWith("pc:") == true -> "pc"
+        annotatorModel?.startsWith("shared:") == true -> "shared"
+        else -> "phone"
     }
 
     data class ImportResult(

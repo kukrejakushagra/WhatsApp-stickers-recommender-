@@ -83,7 +83,7 @@ data class AppActions(
     val setUpQuickSend: () -> Unit = {},
     val setThemeMode: (ThemeMode) -> Unit = {},
     val setAnimateGrid: (Boolean) -> Unit = {},
-    val exportForPc: (all: Boolean) -> Unit = {},
+    val exportForPc: () -> Unit = {},
     val importPcResults: () -> Unit = {},
     val exportDescriptions: () -> Unit = {},
     val refreshPackInWhatsApp: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
@@ -107,9 +107,8 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     val addPack = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         vm.onAddPackResult(r.resultCode, r.data)
     }
-    val exportAll = remember { booleanArrayOf(false) }
     val pcExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        if (uri != null) vm.exportForPc(uri, exportAll[0])
+        if (uri != null) vm.exportForPc(uri)
     }
     val descriptionsExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) vm.exportDescriptions(uri)
@@ -178,7 +177,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             renamePack = vm::renamePack,
             setThemeMode = vm::setThemeMode,
             setAnimateGrid = vm::setAnimateGrid,
-            exportForPc = { all -> exportAll[0] = all; pcExport.launch(if (all) "sticker-search-export-all.zip" else "sticker-search-export.zip") },
+            exportForPc = { pcExport.launch("sticker-search-export.zip") },
             importPcResults = { pcImport.launch(arrayOf("*/*")) },
             refreshPackInWhatsApp = { pack -> vm.refreshPackInWhatsApp(pack) { intent -> addPack.launch(intent) } },
             dismissSendMissed = vm::dismissSendMissed,
