@@ -2,14 +2,18 @@
 """
 Sticker Search: describe your stickers on a PC, then import the results on the phone.
 
-    python describe.py sticker-search-export.zip
+Extract the export zip ("Extract All"), then in that folder either double-click
+"Start on Windows.bat", or run:
 
-Runs a vision model on this computer (Ollama by default) over every sticker in the export,
-using the same prompt as the phone, and writes results.jsonl next to the zip.
+    python describe.py          (python3 on Mac/Linux, or "py describe.py" on some Windows PCs)
 
-Pause any time with Ctrl+C: the stickers in progress are finished and saved first. You can then
-import results.jsonl on the phone, and later run the same command again to carry on where it
-stopped. While it's running, results-snapshot.jsonl is a complete copy you can take any time.
+It runs a vision model on this computer (Ollama) over every sticker in the folder, using the same
+prompt as the phone, and writes results.jsonl into the same folder. The first time it helps you
+pick and download a model.
+
+Pause any time by pressing Enter (or Ctrl+C): the stickers in progress are finished and saved
+first. You can then import results.jsonl on the phone, and later start it again to carry on where
+it stopped. While it's running, results-snapshot.jsonl is a complete copy you can take any time.
 
 Only the Python standard library is needed (Python 3.9+). Your stickers stay on this computer:
 the script talks only to a model server on this machine or your home network, and refuses
@@ -90,47 +94,160 @@ def readable(raw: str) -> bool:
         return False
 
 
-def check_ollama(args) -> None:
+MODELS = [
+    ("gemma3:12b", "best descriptions; needs a graphics card with about 10 GB of memory, or a Mac with 16 GB"),
+    ("gemma3:4b", "faster and smaller; for laptops and modest PCs"),
+]
+
+
+def ollama_models(url: str) -> list:
+    """Names of the models Ollama has, or exits with setup help if Ollama isn't running."""
     try:
-        with urllib.request.urlopen(args.url.rstrip("/") + "/api/tags", timeout=10) as r:
-            names = [m.get("name", "") for m in json.loads(r.read()).get("models", [])]
-    except (urllib.error.URLError, OSError) as e:
-        sys.exit(f"Can't reach Ollama at {args.url} ({e}).\nInstall it from https://ollama.com and make sure it is running.")
-    wanted = args.model if ":" in args.model else args.model + ":latest"
-    if wanted not in names:
-        sys.exit(f"Ollama doesn't have {args.model} yet. Run:\n\n    ollama pull {args.model}\n")
+        with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=10) as r:
+            return [m.get("name", "") for m in json.loads(r.read()).get("models", [])]
+    except (urllib.error.URLError, OSError):
+        sys.exit("Ollama isn't running on this computer.\n"
+                 "Install it from https://ollama.com, open it (it then runs in the background), and start this again.")
 
 
-def main() -> None:
+def has_model(names: list, model: str) -> bool:
+    return (model if ":" in model else model + ":latest") in names
+
+
+def pull_model(url: str, model: str) -> None:
+    """Downloads a model through Ollama (only the model comes in; no sticker goes out)."""
+    print(f"Downloading {model} through Ollama. This happens once and can take a while...")
+    req = urllib.request.Request(url.rstrip("/") + "/api/pull", data=json.dumps({"model": model, "stream": True}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=3600) as r:
+        for raw in r:
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            if msg.get("error"):
+                sys.exit(f"Ollama couldn't download {model}: {msg['error']}")
+            total, done = msg.get("total"), msg.get("completed")
+            if total and done:
+                print(f"\r  {msg.get('status', '')[:30]:30} {done / total * 100:5.1f}%   ", end="", flush=True)
+    print(f"\r  {model} is ready.{' ' * 40}")
+
+
+def choose_model(url: str, names: list, interactive: bool) -> str:
+    """First run: offer the models, download the chosen one."""
+    ready = [m for m, _ in MODELS if has_model(names, m)]
+    if ready:
+        return ready[0]
+    if not interactive:
+        sys.exit(f"Ollama has no vision model for this yet. Run:  ollama pull {MODELS[0][0]}   (or {MODELS[1][0]} on a smaller PC)")
+    print("Which model should describe your stickers?")
+    for i, (m, why) in enumerate(MODELS, 1):
+        print(f"  {i}) {m}: {why}")
+    while True:
+        pick = input("Type 1 or 2 (or a model name) and press Enter [1]: ").strip() or "1"
+        if pick.isdigit() and 1 <= int(pick) <= len(MODELS):
+            model = MODELS[int(pick) - 1][0]
+            break
+        if pick and not pick.isdigit():
+            model = pick
+            break
+    if not has_model(names, model):
+        pull_model(url, model)
+    return model
+
+
+class Export:
+    """The extracted export folder (normal case), or the zip itself (older instructions)."""
+
+    def __init__(self, path: str):
+        if os.path.isdir(path) and not os.path.exists(os.path.join(path, "manifest.json")):
+            # Started next to the zip instead of inside the extracted folder: use the zip if there's one.
+            zips = [f for f in os.listdir(path) if f.lower().endswith(".zip") and f.lower().startswith("sticker-search-export")]
+            if len(zips) == 1:
+                path = os.path.join(path, zips[0])
+        self._zip = None
+        self._lock = threading.Lock()
+        if os.path.isdir(path):
+            manifest_path = os.path.join(path, "manifest.json")
+            if not os.path.exists(manifest_path):
+                sys.exit("There's no manifest.json here. Right-click the export zip, choose Extract All, "
+                         "and start describe.py from inside the extracted folder.")
+            self.folder = os.path.abspath(path)
+            with open(manifest_path, encoding="utf-8") as f:
+                self.manifest = json.load(f)
+        else:
+            self._zip = zipfile.ZipFile(path)
+            self.folder = os.path.dirname(os.path.abspath(path))
+            self.manifest = json.loads(self._zip.read("manifest.json"))
+
+    def image(self, name: str) -> bytes:
+        if self._zip is not None:
+            with self._lock:
+                return self._zip.read(name)
+        with open(os.path.join(self.folder, *name.split("/")), "rb") as f:
+            return f.read()
+
+
+def load_settings(folder: str) -> dict:
+    try:
+        with open(os.path.join(folder, "settings.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(folder: str, settings: dict) -> None:
+    try:
+        with open(os.path.join(folder, "settings.json"), "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+    except OSError:
+        pass
+
+
+def main(interactive: bool) -> None:
+    global KEYS
+    here = os.path.dirname(os.path.abspath(__file__))
     p = argparse.ArgumentParser(description="Describe Sticker Search stickers with a local vision model.")
-    p.add_argument("export", help="the sticker-search-export.zip from the phone")
-    p.add_argument("--model", default=DEFAULT_MODEL, help=f"model name (default {DEFAULT_MODEL}; gemma3:4b is faster on modest PCs)")
+    p.add_argument("export", nargs="?", default=here,
+                   help="the extracted export folder (default: the folder this script is in), or the export zip")
+    p.add_argument("--model", default=None, help=f"model name (default: the one chosen the first time; {MODELS[0][0]} or {MODELS[1][0]})")
     p.add_argument("--api", choices=["ollama", "openai"], default="ollama",
                    help="ollama (default), or any OpenAI-compatible local server such as LM Studio or llama.cpp")
     p.add_argument("--url", default=None, help="server address (default http://localhost:11434, or http://localhost:1234/v1 for --api openai)")
     p.add_argument("--workers", type=int, default=1, help="stickers in parallel (raise it if your server handles parallel requests)")
     p.add_argument("--limit", type=int, default=0, help="stop after this many stickers (to try it out)")
     p.add_argument("--timeout", type=float, default=300, help="seconds to wait for one reply")
-    p.add_argument("--out", default=None, help="results file (default results.jsonl next to the zip)")
+    p.add_argument("--out", default=None, help="results file (default results.jsonl in the export folder)")
     p.add_argument("--allow-remote", action="store_true", help="allow a model server that isn't on this machine or your home network")
     args = p.parse_args()
-    # Windows consoles (or redirected output) may not have "›" or "·": print a stand-in, never crash.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(errors="replace")
-        except (AttributeError, ValueError):
-            pass
     args.url = args.url or ("http://localhost:11434" if args.api == "ollama" else "http://localhost:1234/v1")
 
     if not is_local(args.url) and not args.allow_remote:
         sys.exit(f"{args.url} isn't on this computer or your home network, so your stickers would leave it.\n"
                  "Pass --allow-remote if that's really what you want.")
-    if args.api == "ollama":
-        check_ollama(args)
 
-    zf = zipfile.ZipFile(args.export)
-    manifest = json.loads(zf.read("manifest.json"))
-    out_path = args.out or os.path.join(os.path.dirname(os.path.abspath(args.export)), "results.jsonl")
+    export = Export(args.export)
+    manifest = export.manifest
+    settings = load_settings(export.folder)
+    if args.api == "ollama":
+        names = ollama_models(args.url)
+        if args.model:
+            if not has_model(names, args.model):
+                if not interactive:
+                    sys.exit(f"Ollama doesn't have {args.model} yet. Run:  ollama pull {args.model}")
+                pull_model(args.url, args.model)
+        elif settings.get("model") and has_model(names, settings["model"]):
+            args.model = settings["model"]
+        else:
+            args.model = choose_model(args.url, names, interactive)
+        if not args.model:
+            sys.exit("No model chosen.")
+    elif not args.model:
+        sys.exit("With --api openai, also pass --model <the model name your server shows>.")
+    settings["model"] = args.model
+    save_settings(export.folder, settings)
+
+    out_path = args.out or os.path.join(export.folder, "results.jsonl")
     snapshot_path = os.path.join(os.path.dirname(os.path.abspath(out_path)), "results-snapshot.jsonl")
     repair_tail(out_path)
     done = set()
@@ -146,22 +263,21 @@ def main() -> None:
         todo = todo[:args.limit]
     total = len(manifest["items"])
     earlier = sum(1 for it in manifest["items"] if it["sha256"] in done)
-    if earlier:
-        print(f"{earlier:,} already done from earlier runs; {len(todo):,} to go, with {args.model}.")
-    else:
-        print(f"{total:,} stickers to describe with {args.model}. Press Ctrl+C any time to pause.")
     if not todo:
-        print(f"Nothing left. Copy {out_path} to your phone and import it.")
+        print(f"All {total:,} stickers are described. Copy results.jsonl from this folder to your phone and import it.")
         return
+    pause_hint = "Press Enter to pause" if interactive else "Press Ctrl+C to pause"
+    if earlier:
+        print(f"{earlier:,} already done from earlier runs; {len(todo):,} to go, with {args.model}. {pause_hint}.")
+    else:
+        print(f"{total:,} stickers to describe with {args.model}. {pause_hint} any time.")
 
     ask = ask_ollama if args.api == "ollama" else ask_openai
-    zip_lock = threading.Lock()
     started = time.time()
     finished = failed = 0
 
     def describe(item):
-        with zip_lock:
-            image = base64.b64encode(zf.read(item["image"])).decode("ascii")
+        image = base64.b64encode(export.image(item["image"])).decode("ascii")
         t0 = time.time()
         raw = ""
         for _ in range(3):
@@ -170,17 +286,26 @@ def main() -> None:
                 break
         return item, raw, time.time() - t0
 
-    # First Ctrl+C: pause (finish and save the stickers in progress). Second: quit at once.
+    # Pausing: Enter (or the first Ctrl+C) finishes and saves the stickers in progress, then stops.
+    # A second Ctrl+C quits at once.
     stop = threading.Event()
+
+    def request_pause(how: str) -> None:
+        if not stop.is_set():
+            stop.set()
+            print(f"\nPausing ({how}): finishing the stickers in progress and saving them...", flush=True)
 
     def on_ctrl_c(_sig, _frame):
         if stop.is_set():
             print("\nQuitting now. Everything saved so far stays in results.jsonl.", flush=True)
             os._exit(130)
-        stop.set()
-        print("\nPausing: finishing the stickers in progress and saving them (Ctrl+C again to quit at once)...", flush=True)
+        request_pause("Ctrl+C; press it again to quit at once")
 
     signal.signal(signal.SIGINT, on_ctrl_c)
+    if interactive:
+        # Started only now: the first-run model menu above reads the keyboard itself.
+        KEYS = _Keys()
+        KEYS.on_line = lambda: request_pause("Enter")
 
     workers = max(1, args.workers)
     pending = iter(todo)
@@ -225,8 +350,8 @@ def main() -> None:
                 # rate is wall-clock time per sticker, so it already reflects parallel workers.
                 left = (len(todo) - finished - failed) * rate
                 if not stop.is_set():
-                    print(f"\r  {finished + earlier:,}/{total:,} described · {rate:.1f} s each · about {left / 60:.0f} min left   ",
-                          end="", flush=True)
+                    print(f"\r  {finished + earlier:,}/{total:,} described · {rate:.1f} s each · about {left / 60:.0f} min left"
+                          f" · {pause_hint}   ", end="", flush=True)
                 start_next()
             if since_snapshot >= 50:
                 write_snapshot(out_path, snapshot_path)
@@ -235,13 +360,14 @@ def main() -> None:
 
     described = finished + earlier
     if stop.is_set() and described < total:
-        print(f"\nPaused: {described:,} of {total:,} described and saved in results.jsonl.")
+        print(f"\nPaused: {described:,} of {total:,} described and saved in results.jsonl (in this folder).")
         print("You can import results.jsonl on the phone now (Settings › Faster: describe on a PC › Import results).")
-        print("To continue, run the same command again; it picks up where it stopped.")
+        print("To continue later, start this again the same way; it picks up where it stopped.")
         return
     print(f"\nDone: {described:,} of {total:,} described"
-          + (f", {failed} couldn't be read (run again to retry them)." if failed else "."))
-    print(f"Copy {out_path} to your phone, then in Sticker Search open Settings › Faster: describe on a PC › Import results.")
+          + (f", {failed} couldn't be read (start again to retry them)." if failed else "."))
+    print("Copy results.jsonl from this folder to your phone, then in Sticker Search open "
+          "Settings › Faster: describe on a PC › Import results.")
 
 
 def repair_tail(path: str) -> None:
@@ -273,5 +399,66 @@ def write_snapshot(src: str, dest: str) -> None:
     os.replace(tmp, dest)
 
 
+class _Keys:
+    """Reads Enter presses in the background: during a run they pause it, at the end they close."""
+
+    def __init__(self) -> None:
+        self.on_line = None
+        self.closing = threading.Event()
+        self.closed = threading.Event()
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self) -> None:
+        while True:
+            line = sys.stdin.readline()
+            if not line:  # no keyboard (EOF)
+                self.closed.set()
+                return
+            if self.closing.is_set():
+                self.closed.set()
+                return
+            if self.on_line:
+                self.on_line()
+
+
+KEYS = None
+
+
+def run() -> None:
+    # Windows consoles (or redirected output) may not have "›" or "·": print a stand-in, never crash.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    interactive = sys.stdin is not None and sys.stdin.isatty()
+    # Double-clicked (no arguments): keep the window open at the end so the messages can be read.
+    keep_open = interactive and len(sys.argv) == 1
+    code = 0
+    try:
+        main(interactive)
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            print(e.code if isinstance(e.code, str) else f"Stopped (code {e.code}).", file=sys.stderr)
+            code = e.code if isinstance(e.code, int) else 1
+    except KeyboardInterrupt:
+        print("\nStopped.")
+        code = 130
+    except Exception as e:  # show the problem instead of a window that vanishes
+        print(f"\nSomething went wrong: {e.__class__.__name__}: {e}", file=sys.stderr)
+        code = 1
+    if keep_open:
+        print("\nPress Enter to close this window.", flush=True)
+        if KEYS is not None:
+            KEYS.closing.set()
+            KEYS.closed.wait()
+        else:
+            try:
+                input()
+            except EOFError:
+                pass
+    sys.exit(code)
+
+
 if __name__ == "__main__":
-    main()
+    run()

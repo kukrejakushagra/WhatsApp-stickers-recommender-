@@ -52,6 +52,8 @@ object PcBridge {
             PcExportZip(temp).use { zip ->
                 ctx.assets.open("pc/describe.py").use { zip.put("describe.py", it.readBytes()) }
                 ctx.assets.open("pc/README.txt").use { zip.put("README.txt", it.readBytes()) }
+                // Extract All, then double-click: no paths to type, nothing to move.
+                ctx.assets.open("pc/Start on Windows.bat").use { zip.put("Start on Windows.bat", it.readBytes()) }
                 todo.forEachIndexed { i, s ->
                     if (i % 10 == 0) onProgress(i, todo.size)
                     // Contact sheets vary in size: keep checking there's room, and stop cleanly if not.
