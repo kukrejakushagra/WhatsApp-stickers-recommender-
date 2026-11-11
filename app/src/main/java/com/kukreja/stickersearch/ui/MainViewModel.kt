@@ -177,6 +177,8 @@ data class UiState(
     val alwaysRefresh: Boolean = false,
     /** A tapped notification asked for Settings at this panel ("status" or "pc"). */
     val openSettingsAt: String? = null,
+    /** Animated stickers play (twice) in the grid while on screen. */
+    val animateGrid: Boolean = true,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -222,7 +224,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val sharer = StickerSharer(app, events)
 
     private val uiPrefs = app.getSharedPreferences("ui", Context.MODE_PRIVATE)
-    private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length(), themeMode = savedThemeMode(), alwaysRefresh = StickerPacks.alwaysRefresh(app)))
+    private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length(), themeMode = savedThemeMode(), animateGrid = uiPrefs.getBoolean("animate_grid", true), alwaysRefresh = StickerPacks.alwaysRefresh(app)))
     val state: StateFlow<UiState> = _state
     private var searchJob: Job? = null
     private val graphRepo = com.kukreja.stickersearch.graph.GraphRepository(app)
@@ -420,6 +422,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Runs all AI passes now, including annotation on battery (the user asked). */
+    fun setAnimateGrid(on: Boolean) {
+        uiPrefs.edit().putBoolean("animate_grid", on).apply()
+        _state.update { it.copy(animateGrid = on) }
+    }
+
     fun setThemeMode(mode: ThemeMode) {
         uiPrefs.edit().putString("theme", mode.name).apply()
         _state.update { it.copy(themeMode = mode) }
@@ -994,9 +1001,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 StickerPacks.isAdded(ctx, pack)
             }
             refreshPacks()
-            if (added && openNow && pack != null && StickerPacks.openWhatsApp(ctx)) {
-                StickerPacks.recordSent(ctx, pack)
-                toast(readyHint(pack))
+            val confirmed = resultCode == android.app.Activity.RESULT_OK
+            // WhatsApp opens only if the user went through with it on WhatsApp's screen (Add or OK).
+            // Backing out means they changed their mind: don't open WhatsApp.
+            if (openNow && pack != null) {
+                if (confirmed && StickerPacks.openWhatsApp(ctx)) {
+                    StickerPacks.recordSent(ctx, pack)
+                    toast(readyHint(pack))
+                } else if (error != null) {
+                    toast("WhatsApp didn't take the pack: $error")
+                } else {
+                    // If WhatsApp re-read the pack on that screen anyway, the next send goes straight
+                    // to WhatsApp (lastReadVersion is current), so this can't loop.
+                    toast("Not sent. Tap Send in WhatsApp again when you're ready.")
+                }
+                refreshPermissions()
                 return@launch
             }
             toast(
@@ -1046,7 +1065,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun storage() = Storage(
         models = models.totalBytes(),
-        previews = listOf("thumbs", "frames", "packs").sumOf { dirSize(File(ctx.filesDir, it)) },
+        previews = listOf("thumbs", "frames", "packs").sumOf { dirSize(File(ctx.filesDir, it)) } + dirSize(AnimCache.dir(ctx)),
         database = ctx.getDatabasePath("stickers.db").let { f -> f.length() + File(f.path + "-wal").length() },
     )
 
@@ -1057,6 +1076,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             listOf("imported", "thumbs", "frames", "packs").forEach { File(ctx.filesDir, it).deleteRecursively() }
             ctx.getSharedPreferences("sticker_packs", Context.MODE_PRIVATE).edit().clear().apply()
             ctx.cacheDir.deleteRecursively()
+            AnimCache.clearMemory()
             _state.update { it.copy(diagnostic = null, eventCount = 0, message = "Index deleted. Your models are kept.", storage = storage()) }
         }
     }

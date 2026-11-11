@@ -151,7 +151,19 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(horizontal = 4.dp))
 
             // ---- Background ----
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val still = remember { systemWantsStill(ctx) }
             KdsSettingsGroup("Appearance", listOf(
+                {
+                    KdsSettingsRow(
+                        title = "Animate stickers in the grid", icon = R.drawable.ic_kds_play,
+                        description = if (still) "Paused while Battery Saver or \u201cRemove animations\u201d is on. " +
+                            "Animated stickers on screen play twice, like in WhatsApp, then stop until you scroll away and back."
+                        else "Animated stickers on screen play twice, like in WhatsApp, then stop until you scroll away and back. " +
+                            "Paused automatically in Battery Saver.",
+                        trailing = { KdsFilterChip(if (state.animateGrid) "On" else "Off", state.animateGrid, { actions.setAnimateGrid(!state.animateGrid) }) },
+                    )
+                },
                 {
                     KdsSettingsRow(
                         title = "Theme", icon = R.drawable.ic_kds_sliders,

@@ -14,8 +14,8 @@ android {
         // Android 16 only for now; see docs/04-roadmap.md "Android version support".
         minSdk = 36
         targetSdk = 36
-        versionCode = 33
-        versionName = "0.9.7"
+        versionCode = 34
+        versionName = "0.9.8"
         ndk {
             // The phone is arm64; other ABIs would only add ~100 MB of native ML libraries.
             abiFilters += "arm64-v8a"

@@ -97,6 +97,13 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         }
     }
     val scrolled by remember { derivedStateOf { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0 } }
+    // Which tiles are really on screen (not just prepared ahead): only these animate.
+    val onScreen by remember { derivedStateOf { gridState.layoutInfo.visibleItemsInfo.mapTo(HashSet()) { it.key } } }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val anim = TileAnim(
+        enabled = state.animateGrid && !remember(state.animateGrid) { systemWantsStill(ctx) },
+        onScreen = onScreen, scrolling = gridState.isScrollInProgress,
+    )
     Column(Modifier.fillMaxSize()) {
     // ---- Pinned: the search box, and the library filters (or the results line) ----
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
@@ -233,22 +240,22 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         if (assist.attachments.isNotEmpty() && assist.done) {
             if (assist.suggestions.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Suggested replies") }
-                items(assist.suggestions, key = { "s${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id) }
+                items(assist.suggestions, key = { "s${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id, anim, "s${r.id}") }
             }
             if (assist.found.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("In your images") }
-                items(assist.found, key = { "f${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id) }
+                items(assist.found, key = { "f${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id, anim, "f${r.id}") }
             }
         } else if (s.query.isNotBlank()) {
             items(s.results, key = { it.id }) { r ->
-                ResultTile(r, s.matched[r.id].orEmpty().ifEmpty { listOf(" ") }, tap, selecting, r.id in state.selected, send, state.sendingId == r.id)
+                ResultTile(r, s.matched[r.id].orEmpty().ifEmpty { listOf(" ") }, tap, selecting, r.id in state.selected, send, state.sendingId == r.id, anim, r.id)
             }
             if (s.related.isNotEmpty() && !s.searching) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Related") }
-                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), tap, selecting, r.id in state.selected, send, state.sendingId == r.id) }
+                items(s.related, key = { "r${it.first.id}" }) { (r, why) -> ResultTile(r, listOf(why), tap, selecting, r.id in state.selected, send, state.sendingId == r.id, anim, "r${r.id}") }
             }
         } else {
-            items(library, key = { "l${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id) }
+            items(library, key = { "l${it.id}" }) { r -> ResultTile(r, emptyList(), tap, selecting, r.id in state.selected, send, state.sendingId == r.id, anim, "l${r.id}") }
         }
     }
     if (browsing && library.isNotEmpty()) {
@@ -291,6 +298,7 @@ private fun SectionLabel(text: String) {
 private fun ResultTile(
     r: StickerRow, why: List<String>, onTap: (StickerRow) -> Unit, selecting: Boolean = false, picked: Boolean = false,
     onSend: ((StickerRow) -> Unit)? = null, sending: Boolean = false,
+    anim: TileAnim = TileAnim.Off, key: Any? = null,
 ) {
     Column {
         KdsMediaTile(onClick = { onTap(r) }, label = tileLabel(r), selectable = selecting, picked = picked,
@@ -298,7 +306,7 @@ private fun ResultTile(
             // Lottie stickers can't go into WhatsApp packs, so they get no send button.
             actionIcon = R.drawable.ic_kds_send, actionLabel = "Send in WhatsApp",
             onAction = onSend?.takeIf { !r.isLottie() && r.primaryUri != null }?.let { f -> { f(r) } }, actionBusy = sending) {
-            Thumb(r.thumbnailPath, Modifier.fillMaxSize(), placeholder = if (r.isLottie()) R.drawable.ic_kds_spark else R.drawable.ic_kds_image)
+            AnimatedTile(r, onScreen = key != null && key in anim.onScreen, scrolling = anim.scrolling, enabled = anim.enabled)
         }
         if (why.isNotEmpty()) {
             Text(why.take(2).joinToString(" · "), style = Kds.type.labelXs, color = Kds.colors.mutedForeground, maxLines = 1,
@@ -381,4 +389,9 @@ internal enum class LibraryFilter(val label: String, val packName: String) {
         NOT_DESCRIBED -> s.status == com.kukreja.stickersearch.data.StickerStatus.PENDING
         ATTENTION -> s.needsAttention()
     }
+}
+
+/** What a grid tile needs to decide whether to animate. */
+internal data class TileAnim(val enabled: Boolean, val onScreen: Set<Any>, val scrolling: Boolean) {
+    companion object { val Off = TileAnim(false, emptySet(), false) }
 }
