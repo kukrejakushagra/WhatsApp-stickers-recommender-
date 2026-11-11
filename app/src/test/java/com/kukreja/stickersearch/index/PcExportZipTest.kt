@@ -37,4 +37,38 @@ class PcExportZipTest {
         f.writeBytes(f.readBytes().copyOf(f.length().toInt() / 2))
         assertNotNull(PcExportZip.verify(f, names))
     }
+
+    @Test
+    fun `the Mac and Linux starters are marked executable, nothing else is`() {
+        val f = File.createTempFile("export", ".zip").apply { deleteOnExit() }
+        PcExportZip(f).use { z ->
+            z.put("describe.py", "print(1)".toByteArray())
+            z.put("Start on Mac.command", "#!/bin/sh\n".toByteArray(), executable = true)
+            z.put("start-linux.sh", "#!/bin/sh\n".toByteArray(), executable = true)
+            z.put("images/a.jpg", ByteArray(100), store = true)
+            z.finish("{}".toByteArray())
+        }
+        val modes = unixModes(f)
+        assertEquals(0b111_101_101, modes.getValue("Start on Mac.command") and 0x1FF)
+        assertEquals(0b111_101_101, modes.getValue("start-linux.sh") and 0x1FF)
+        assertEquals(0, modes.getValue("describe.py"))
+        assertNull(PcExportZip.verify(f, listOf("images/a.jpg")))   // still a valid zip
+    }
+
+    /** Reads each central-directory entry's Unix mode (high 16 bits of the external attributes). */
+    private fun unixModes(f: File): Map<String, Int> {
+        val b = f.readBytes()
+        fun le16(i: Int) = (b[i].toInt() and 0xff) or ((b[i + 1].toInt() and 0xff) shl 8)
+        fun le32(i: Int) = le16(i) or (le16(i + 2) shl 16)
+        var eocd = b.size - 22
+        while (le32(eocd) != 0x06054b50) eocd--
+        var p = le32(eocd + 16)
+        val out = mutableMapOf<String, Int>()
+        while (le32(p) == 0x02014b50) {
+            val n = le16(p + 28); val e = le16(p + 30); val c = le16(p + 32)
+            out[String(b, p + 46, n)] = (le32(p + 38) ushr 16)
+            p += 46 + n + e + c
+        }
+        return out
+    }
 }

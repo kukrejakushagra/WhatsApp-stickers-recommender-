@@ -21,6 +21,7 @@ anything else unless you pass --allow-remote.
 """
 import argparse
 import base64
+import collections
 import ipaddress
 import json
 import os
@@ -65,7 +66,7 @@ def ask_ollama(args, prompt: str, image_b64: str) -> str:
     body = {
         "model": args.model, "prompt": prompt, "images": [image_b64], "stream": False,
         "format": "json", "keep_alive": "30m",
-        "options": {"temperature": 0.2, "top_k": 20, "num_predict": 1500},
+        "options": {"temperature": 0.2, "top_k": 20, "num_predict": 1500, "num_ctx": 4096},
     }
     return post(args.url.rstrip("/") + "/api/generate", body, args.timeout)["response"]
 
@@ -195,11 +196,13 @@ def pull_model(url: str, model: str) -> None:
     print(f"\r  {model} is ready.{' ' * 40}")
 
 
-def choose_model(url: str, names: list, interactive: bool) -> str:
-    """First run: offer the models, download the chosen one."""
+def choose_model(url: str, names: list, interactive: bool, force: bool = False) -> str:
+    """First run (or --choose-model): offer the models, download the chosen one."""
     ready = [m for m, _ in MODELS if has_model(names, m)]
-    if ready:
+    if ready and not force:
         return ready[0]
+    if force and not interactive:
+        sys.exit("--choose-model needs a keyboard: run it in a terminal window, or pass --model gemma3:4b instead.")
     if not interactive:
         sys.exit(f"Ollama has no vision model for this yet. Run:  ollama pull {MODELS[0][0]}   (or {MODELS[1][0]} on a smaller PC)")
     print("Which model should describe your stickers?")
@@ -278,6 +281,7 @@ def main(interactive: bool) -> None:
     p.add_argument("--url", default=None, help="server address (default http://localhost:11434, or http://localhost:1234/v1 for --api openai)")
     p.add_argument("--workers", type=int, default=1, help="stickers in parallel (raise it if your server handles parallel requests)")
     p.add_argument("--limit", type=int, default=0, help="stop after this many stickers (to try it out)")
+    p.add_argument("--choose-model", action="store_true", help="pick the model again (e.g. switch to the faster gemma3:4b)")
     p.add_argument("--prompt", choices=["pc", "app"], default="pc",
                    help="pc (default): a detailed look-first prompt for bigger models; app: the phone's shorter prompt")
     p.add_argument("--timeout", type=float, default=300, help="seconds to wait for one reply")
@@ -300,6 +304,8 @@ def main(interactive: bool) -> None:
                 if not interactive:
                     sys.exit(f"Ollama doesn't have {args.model} yet. Run:  ollama pull {args.model}")
                 pull_model(args.url, args.model)
+        elif args.choose_model:
+            args.model = choose_model(args.url, names, interactive, force=True)
         elif settings.get("model") and has_model(names, settings["model"]):
             args.model = settings["model"]
         else:
@@ -345,7 +351,12 @@ def main(interactive: bool) -> None:
         t0 = time.time()
         raw = ""
         for _ in range(3):
-            raw = ask(args, build_prompt(item, manifest, args.prompt), image)
+            try:
+                raw = ask(args, build_prompt(item, manifest, args.prompt), image)
+            except urllib.error.HTTPError:
+                raw = ""  # the server answered with an error for this sticker: try again, then skip it
+            except (urllib.error.URLError, ConnectionError, TimeoutError, socket.timeout, OSError) as e:
+                raise ServerDown(item, e)  # nobody answered: the server is gone, not the sticker
             if readable(raw):
                 break
         return item, raw, time.time() - t0
@@ -372,34 +383,98 @@ def main(interactive: bool) -> None:
         KEYS.on_line = lambda: request_pause("Enter")
 
     workers = max(1, args.workers)
-    pending = iter(todo)
+    pending = collections.deque(todo)
     in_flight = set()
     since_snapshot = 0
-    with open(out_path, "a", encoding="utf-8") as out, ThreadPoolExecutor(max_workers=workers) as pool:
-        def start_next() -> None:
-            # Only as many requests as workers are ever in flight, so pausing loses nothing.
-            if stop.is_set():
-                return
-            item = next(pending, None)
-            if item is not None:
-                in_flight.add(pool.submit(describe, item))
+    down = False
+    outages = 0
+    tips_shown = set()
+    wait_limit = float(os.environ.get("STICKER_SEARCH_SERVER_WAIT", "180"))
 
-        for _ in range(workers):
-            start_next()
-        while in_flight:
+    def tip(key: str, text: str) -> None:
+        if key not in tips_shown:
+            tips_shown.add(key)
+            print(f"\n  Tip: {text}", flush=True)
+
+    def check_fit() -> None:
+        """Ollama reports how much of the model sits in graphics memory; much less than all of it is slow."""
+        if args.api != "ollama":
+            return
+        try:
+            with urllib.request.urlopen(args.url.rstrip("/") + "/api/ps", timeout=10) as r:
+                loaded = json.loads(r.read()).get("models", [])
+        except (urllib.error.URLError, OSError, ValueError):
+            return
+        for m in loaded:
+            if m.get("name") == args.model or m.get("model") == args.model:
+                size, vram = m.get("size") or 0, m.get("size_vram") or 0
+                if size and vram / size < 0.9:
+                    smaller = " gemma3:4b fits better and is usually several times faster." if args.model != MODELS[1][0] else ""
+                    tip("fit", f"only {vram / size:.0%} of {args.model} fits in your graphics memory, so it runs mostly on the "
+                               f"processor (slow, and Ollama may run out of memory).{smaller} To switch, start again with --choose-model.")
+
+    def server_up() -> bool:
+        try:
+            with urllib.request.urlopen(args.url.rstrip("/") + ("/api/tags" if args.api == "ollama" else "/models"), timeout=5):
+                return True
+        except (urllib.error.URLError, OSError):
+            return False
+
+    def wait_for_server() -> None:
+        """Ollama stopped answering: wait for it to come back (or pause), instead of skipping every sticker."""
+        nonlocal down
+        since = time.time()
+        while not stop.is_set():
+            for _ in range(10):
+                if stop.is_set():
+                    return
+                time.sleep(0.5)
+            if server_up():
+                down = False
+                print("  Ollama is back; continuing.", flush=True)
+                return
+            if time.time() - since > wait_limit:
+                waited = f"{wait_limit / 60:.0f} min" if wait_limit >= 60 else f"{wait_limit:.0f} s"
+                request_pause(f"Ollama didn't come back within {waited}; open Ollama, then start this again")
+                return
+
+    with open(out_path, "a", encoding="utf-8") as out, ThreadPoolExecutor(max_workers=workers) as pool:
+        def fill() -> None:
+            # Only as many requests as workers are ever in flight, so pausing loses nothing.
+            while len(in_flight) < workers and pending and not stop.is_set() and not down:
+                in_flight.add(pool.submit(describe, pending.popleft()))
+
+        fill()
+        while True:
+            if not in_flight:
+                if down and not stop.is_set():
+                    wait_for_server()
+                    fill()
+                    if in_flight:
+                        continue
+                break
             finished_now, _ = wait(in_flight, timeout=0.5, return_when=FIRST_COMPLETED)
             for fut in finished_now:
                 in_flight.discard(fut)
                 try:
                     item, raw, secs = fut.result()
-                except Exception as e:  # one bad reply shouldn't stop the run
+                except ServerDown as e:
+                    pending.appendleft(e.item)  # not this sticker's fault: it goes back in the queue
+                    if not down:
+                        down = True
+                        outages += 1
+                        more = (" It has stopped more than once: the model is probably too big for this PC's memory; "
+                                "start again with --choose-model and pick gemma3:4b.") if outages > 1 else ""
+                        print("\n  Ollama stopped responding (it may have run out of memory, or been closed). "
+                              f"Waiting for it to come back; open Ollama again if it's closed. {pause_hint} instead.{more}",
+                              flush=True)
+                    continue
+                except Exception as e:  # anything else about one sticker shouldn't stop the run
                     failed += 1
                     print(f"\n  skipped one: {e}", file=sys.stderr)
-                    start_next()
                     continue
                 if not readable(raw):
                     failed += 1
-                    start_next()
                     continue
                 line = json.dumps({"sha256": item["sha256"], "model": args.model, "raw": raw,
                                    "prompt_version": manifest.get("prompt_version", 1),
@@ -411,13 +486,18 @@ def main(interactive: bool) -> None:
                 os.fsync(out.fileno())
                 finished += 1
                 since_snapshot += 1
+                if finished == 1:
+                    check_fit()
                 rate = (time.time() - started) / finished
+                if finished == 5 and rate > 25 and args.model != MODELS[1][0]:
+                    tip("slow", f"about {rate:.0f} s per sticker is slow. gemma3:4b is usually several times faster; "
+                                "to switch, start again with --choose-model.")
                 # rate is wall-clock time per sticker, so it already reflects parallel workers.
-                left = (len(todo) - finished - failed) * rate
-                if not stop.is_set():
+                left = (len(pending) + len(in_flight)) * rate
+                if not stop.is_set() and not down:
                     print(f"\r  {finished + earlier:,}/{total:,} described · {rate:.1f} s each · about {left / 60:.0f} min left"
                           f" · {pause_hint}   ", end="", flush=True)
-                start_next()
+            fill()
             if since_snapshot >= 50:
                 write_snapshot(out_path, snapshot_path)
                 since_snapshot = 0
@@ -433,6 +513,14 @@ def main(interactive: bool) -> None:
           + (f", {failed} couldn't be read (start again to retry them)." if failed else "."))
     print("Copy results.jsonl from this folder to your phone, then in Sticker Search open "
           "Settings › Faster: describe on a PC › Import results.")
+
+
+class ServerDown(Exception):
+    """The model server didn't answer at all (closed, crashed, out of memory): not this sticker's fault."""
+
+    def __init__(self, item: dict, cause: Exception):
+        super().__init__(str(cause))
+        self.item = item
 
 
 def repair_tail(path: str) -> None:

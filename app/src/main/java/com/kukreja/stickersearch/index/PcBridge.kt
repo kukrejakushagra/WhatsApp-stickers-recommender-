@@ -54,6 +54,8 @@ object PcBridge {
                 ctx.assets.open("pc/README.txt").use { zip.put("README.txt", it.readBytes()) }
                 // Extract All, then double-click: no paths to type, nothing to move.
                 ctx.assets.open("pc/Start on Windows.bat").use { zip.put("Start on Windows.bat", it.readBytes()) }
+                ctx.assets.open("pc/Start on Mac.command").use { zip.put("Start on Mac.command", it.readBytes(), executable = true) }
+                ctx.assets.open("pc/start-linux.sh").use { zip.put("start-linux.sh", it.readBytes(), executable = true) }
                 todo.forEachIndexed { i, s ->
                     if (i % 10 == 0) onProgress(i, todo.size)
                     // Contact sheets vary in size: keep checking there's room, and stop cleanly if not.

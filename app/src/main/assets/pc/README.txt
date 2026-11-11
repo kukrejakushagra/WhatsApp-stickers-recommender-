@@ -16,14 +16,26 @@ Run it
 ------
 1. If you haven't yet: right-click the zip and choose "Extract All". Use the extracted folder,
    the one this README is in. Don't move anything out of it.
-2. Windows: double-click "Start on Windows.bat".
-   Mac or Linux: open a Terminal in this folder and run:  python3 describe.py
+2. Start it from that folder:
+   - Windows: double-click "Start on Windows.bat".
+   - Mac: double-click "Start on Mac.command". The first time, macOS may say it's from an
+     unidentified developer: right-click the file, choose Open, then Open again.
+   - Linux: double-click "start-linux.sh" and choose Run (or Run in Terminal), or in a terminal
+     in this folder run:  ./start-linux.sh
 3. The first time, it asks which model to use and downloads it (only the model is downloaded;
    your stickers never leave this PC):
      1) gemma3:12b  best; needs a graphics card with about 10 GB of memory, or a Mac with 16 GB
      2) gemma3:4b   faster; for laptops and modest PCs
    Your choice is remembered for next time.
 4. It shows progress and the time left. Results are saved in this folder as results.jsonl.
+
+Too slow, or Ollama keeps stopping? The model is probably too big for this PC's memory (the
+script tells you if so). Switch to the faster gemma3:4b by starting it with --choose-model:
+   Windows (in a terminal in this folder):  py describe.py --choose-model
+   Mac (Terminal in this folder):           ./"Start on Mac.command" --choose-model
+   Linux (terminal in this folder):         ./start-linux.sh --choose-model
+If Ollama stops while it's working, the script waits for it to come back (open Ollama again)
+instead of skipping stickers; nothing is lost.
 
 Pause and continue
 ------------------

@@ -4,12 +4,12 @@ cd /d "%~dp0"
 title Sticker Search - describing stickers
 where py >nul 2>nul
 if %errorlevel%==0 (
-    py -3 describe.py
+    py -3 describe.py %*
     goto :eof
 )
 where python >nul 2>nul
 if %errorlevel%==0 (
-    python describe.py
+    python describe.py %*
     goto :eof
 )
 echo Python 3 isn't installed on this PC.
