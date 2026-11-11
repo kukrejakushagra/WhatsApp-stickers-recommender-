@@ -11,9 +11,7 @@ import com.kukreja.stickersearch.ml.GemmaAnnotator
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
-import java.util.zip.Deflater
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
+import java.io.File
 
 /**
  * "Describe on a PC": the slow Gemma step, done by a bigger model on the user's own computer.
@@ -28,47 +26,67 @@ object PcBridge {
     const val FORMAT = 1
     const val RESULTS_NAME = "results.jsonl"
 
-    /** Writes the export zip to [out]; returns how many stickers went in. */
-    suspend fun export(ctx: Context, db: StickerDatabase, out: Uri, onProgress: (Int, Int) -> Unit): Int {
+    data class ExportResult(val written: Int, val total: Int, val skipped: Map<String, Int>)
+
+    /**
+     * Writes the export zip to [out]. It's built in the app's cache first, verified, and only then
+     * copied to [out], so the user never gets a half-written zip. Throws if anything goes wrong;
+     * the caller deletes [out] then.
+     */
+    suspend fun export(ctx: Context, db: StickerDatabase, out: Uri, onProgress: suspend (Int, Int) -> Unit): ExportResult {
         val todo = db.ai().undescribed()
-        val items = JSONArray()
-        var written = 0
-        val stream = ctx.contentResolver.openOutputStream(out, "wt") ?: error("Couldn't write to that file.")
-        ZipOutputStream(stream.buffered(1 shl 16)).use { zip ->
-            zip.setLevel(Deflater.BEST_SPEED)
-            fun put(name: String, bytes: ByteArray) {
-                zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry()
-            }
-            ctx.assets.open("pc/describe.py").use { put("describe.py", it.readBytes()) }
-            ctx.assets.open("pc/README.txt").use { put("README.txt", it.readBytes()) }
-            todo.forEachIndexed { i, s ->
-                onProgress(i, todo.size)
-                val frames = StickerImages.load(ctx, db, s, preferOriginal = true)
-                if (frames.isEmpty()) return@forEachIndexed
-                val motion = s.isAnimated && frames.size > 1
-                val image = if (frames.size > 1) GemmaAnnotator.contactSheet(frames) else GemmaAnnotator.onWhite(frames.first())
-                frames.forEach { it.recycle() }
-                val jpg = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
-                image.recycle()
-                val name = "images/${s.sha256}.jpg"
-                put(name, jpg)
-                items.put(JSONObject()
-                    .put("sha256", s.sha256)
-                    .put("image", name)
-                    .put("animated", motion)
-                    .put("prompt", GemmaAnnotator.prompt(motion, s.durationMs)))
-                written++
-            }
-            put("manifest.json", JSONObject()
-                .put("format", FORMAT)
-                .put("app", runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "")
-                .put("prompt_version", GemmaAnnotator.PROMPT_VERSION)
-                .put("created_ms", System.currentTimeMillis())
-                .put("items", items)
-                .toString().toByteArray())
+        // Rough room needed: about 60 KB per sticker in the temp copy, plus a margin.
+        val need = todo.size * 60L * 1024 + 20L * 1024 * 1024
+        if (ctx.cacheDir.usableSpace < need) {
+            error("Not enough free space: about %,d MB is needed while exporting.".format(need / (1024 * 1024)))
         }
-        onProgress(todo.size, todo.size)
-        return written
+        val temp = File(ctx.cacheDir, "pc-export.zip").apply { delete() }
+        val items = JSONArray()
+        val skipped = linkedMapOf<String, Int>()
+        val expected = mutableListOf<String>()
+        try {
+            PcExportZip(temp).use { zip ->
+                ctx.assets.open("pc/describe.py").use { zip.put("describe.py", it.readBytes()) }
+                ctx.assets.open("pc/README.txt").use { zip.put("README.txt", it.readBytes()) }
+                todo.forEachIndexed { i, s ->
+                    if (i % 10 == 0) onProgress(i, todo.size)
+                    val frames = runCatching { StickerImages.load(ctx, db, s, preferOriginal = true) }.getOrElse { emptyList() }
+                    if (frames.isEmpty()) {
+                        val why = if (s.format == "LOTTIE_WAS") "Lottie with no readable frames" else "no picture could be read"
+                        skipped[why] = (skipped[why] ?: 0) + 1
+                        return@forEachIndexed
+                    }
+                    val motion = s.isAnimated && frames.size > 1
+                    val image = if (frames.size > 1) GemmaAnnotator.contactSheet(frames) else GemmaAnnotator.onWhite(frames.first())
+                    frames.forEach { it.recycle() }
+                    val jpg = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+                    image.recycle()
+                    val name = "images/${s.sha256}.jpg"
+                    zip.put(name, jpg, store = true)
+                    expected += name
+                    items.put(JSONObject()
+                        .put("sha256", s.sha256)
+                        .put("image", name)
+                        .put("animated", motion)
+                        .put("prompt", GemmaAnnotator.prompt(motion, s.durationMs)))
+                }
+                zip.finish(JSONObject()
+                    .put("format", FORMAT)
+                    .put("app", runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "")
+                    .put("prompt_version", GemmaAnnotator.PROMPT_VERSION)
+                    .put("created_ms", System.currentTimeMillis())
+                    .put("items", items)
+                    .toString().toByteArray())
+            }
+            onProgress(todo.size, todo.size)
+            PcExportZip.verify(temp, expected)?.let { error("The export didn't check out: $it") }
+            // Copy the finished, verified zip to where the user asked.
+            val stream = ctx.contentResolver.openOutputStream(out, "wt") ?: error("Couldn't write to that file.")
+            stream.use { o -> temp.inputStream().use { it.copyTo(o, 1 shl 16) } }
+            return ExportResult(expected.size, todo.size, skipped)
+        } finally {
+            temp.delete()
+        }
     }
 
     data class ImportResult(val saved: Int, val unreadable: Int, val unknown: Int, val alreadyDescribed: Int)

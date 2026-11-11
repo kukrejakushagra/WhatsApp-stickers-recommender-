@@ -260,6 +260,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch(Dispatchers.Default) { engine.warmUp() }
+        observePcExport()
         // If the app died inside Gemma (describing or suggesting replies), record it now.
         viewModelScope.launch(Dispatchers.IO) {
             com.kukreja.stickersearch.ml.DescribeGuard.takeUnfinishedEmbed(ctx)?.let { id ->
@@ -425,18 +426,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exportForPc(out: Uri) {
         if (_state.value.pcProgress != null) return
-        viewModelScope.launch(Dispatchers.IO) {
-            _state.update { it.copy(pcProgress = "Preparing the export") }
-            runCatching {
-                com.kukreja.stickersearch.index.PcBridge.export(ctx, db, out) { d, t ->
-                    if (d % 20 == 0 || d == t) _state.update { it.copy(pcProgress = "Exporting %,d of %,d stickers".format(d, t)) }
+        // Keep write access after this screen goes away: the export runs as a background job.
+        runCatching { ctx.contentResolver.takePersistableUriPermission(out, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        com.kukreja.stickersearch.index.PcExportWorker.enqueue(ctx, out)
+        _state.update { it.copy(pcProgress = "Preparing the export") }
+        toast("Exporting in the background. You can leave the app; the notification shows progress.")
+    }
+
+    /** Follows the export job: progress into Settings, and one message when it ends. */
+    private fun observePcExport() {
+        val prefs = uiPrefs
+        viewModelScope.launch {
+            androidx.work.WorkManager.getInstance(ctx)
+                .getWorkInfosForUniqueWorkFlow(com.kukreja.stickersearch.index.PcExportWorker.UNIQUE)
+                .collect { infos ->
+                    val w = infos.lastOrNull() ?: return@collect
+                    val W = com.kukreja.stickersearch.index.PcExportWorker
+                    when (w.state) {
+                        androidx.work.WorkInfo.State.RUNNING, androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> {
+                            val d = w.progress.getInt(W.KEY_DONE, 0); val t = w.progress.getInt(W.KEY_TOTAL, 0)
+                            _state.update { it.copy(pcProgress = if (t > 0) "Exporting %,d of %,d stickers".format(d, t) else "Preparing the export") }
+                        }
+                        else -> {
+                            _state.update { it.copy(pcProgress = null) }
+                            // Each finished export is announced once, even across app restarts.
+                            val id = w.id.toString()
+                            if (prefs.getString("pc_export_seen", null) == id) return@collect
+                            prefs.edit().putString("pc_export_seen", id).apply()
+                            val o = w.outputData
+                            toast(when (w.state) {
+                                androidx.work.WorkInfo.State.SUCCEEDED -> {
+                                    val n = o.getInt(W.KEY_WRITTEN, 0); val t = o.getInt(W.KEY_TOTAL, 0)
+                                    val skipped = o.getString(W.KEY_SKIPPED).orEmpty()
+                                    if (t == 0) "Every sticker is already described; nothing to export."
+                                    else "Exported %,d of %,d stickers%s. Copy the file to your PC and follow README.txt inside it."
+                                        .format(n, t, if (skipped.isNotBlank()) " (skipped: $skipped)" else "")
+                                }
+                                androidx.work.WorkInfo.State.CANCELLED -> "The export was stopped, and the unfinished file was removed."
+                                else -> "The export didn't finish: ${o.getString(W.KEY_ERROR) ?: "unknown error"}. The unfinished file was removed; try again."
+                            })
+                        }
+                    }
                 }
-            }.onSuccess { n ->
-                events.add("pc_export", mapOf("stickers" to n))
-                toast(if (n == 0) "Every sticker is already described." else
-                    "Saved %,d stickers. Copy the file to your PC and follow README.txt inside it.".format(n))
-            }.onFailure { toast("Export failed: ${it.message}") }
-            _state.update { it.copy(pcProgress = null) }
         }
     }
 
