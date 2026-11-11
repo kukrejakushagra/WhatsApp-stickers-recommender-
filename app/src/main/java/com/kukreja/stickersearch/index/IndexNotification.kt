@@ -24,9 +24,25 @@ object IndexNotification {
         }
     }
 
-    private fun build(ctx: Context, done: Int, total: Int, title: String): Notification {
+    /** Where a tap on the notification takes you (Settings, at the matching panel). */
+    const val TARGET_STATUS = "status"
+    const val TARGET_PC = "pc"
+    const val EXTRA_OPEN = "open"
+
+    private fun openApp(ctx: Context, target: String): android.app.PendingIntent {
+        val intent = android.content.Intent(ctx, com.kukreja.stickersearch.ui.MainActivity::class.java)
+            .putExtra(EXTRA_OPEN, target)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        return android.app.PendingIntent.getActivity(
+            ctx, if (target == TARGET_PC) 11 else 10, intent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
+
+    private fun build(ctx: Context, done: Int, total: Int, title: String, target: String): Notification {
         channel(ctx)
         return Notification.Builder(ctx, CHANNEL)
+            .setContentIntent(openApp(ctx, target))
             .setSmallIcon(R.drawable.ic_kds_search)
             .setContentTitle(title)
             .setContentText(if (total > 0) "%,d of %,d".format(done, total) else "Listing files")
@@ -46,11 +62,11 @@ object IndexNotification {
             .build()
     }
 
-    fun info(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers") =
-        ForegroundInfo(ID, build(ctx, done, total, title), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+    fun info(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers", target: String = TARGET_STATUS) =
+        ForegroundInfo(ID, build(ctx, done, total, title, target), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
 
-    fun update(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers") {
-        runCatching { ctx.getSystemService(NotificationManager::class.java).notify(ID, build(ctx, done, total, title)) }
+    fun update(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers", target: String = TARGET_STATUS) {
+        runCatching { ctx.getSystemService(NotificationManager::class.java).notify(ID, build(ctx, done, total, title, target)) }
     }
 }
 

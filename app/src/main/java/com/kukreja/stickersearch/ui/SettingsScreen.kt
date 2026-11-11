@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import com.kukreja.stickersearch.ui.kds.KdsFilterChip
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.getValue
@@ -58,6 +59,17 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
     var showReport by remember { mutableStateOf(false) }
     var openPack by remember { mutableStateOf<String?>(null) }
     state.packs.firstOrNull { it.pack.id == openPack }?.let { info -> PackSheet(info, state, actions) { openPack = null } }
+    // Opened from a notification: bring the panel it's about into view.
+    val statusPanel = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val pcPanel = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    androidx.compose.runtime.LaunchedEffect(state.openSettingsAt) {
+        when (state.openSettingsAt) {
+            null -> return@LaunchedEffect
+            "pc" -> pcPanel.bringIntoView()
+            else -> statusPanel.bringIntoView()
+        }
+        actions.settingsOpened()
+    }
     val pickedStickersOnly = p.safHeld && p.safTreeId?.endsWith("WhatsApp Stickers") == true
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         KdsAppBar("Settings")
@@ -93,11 +105,11 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 KdsCallout("You picked WhatsApp Stickers only, so the stickers in Backup Excluded Stickers are missed. Pick Media instead.",
                     CalloutTone.WARNING, title = "One folder is missing")
             }
-            StatusPanel(state, actions)
+            Box(Modifier.bringIntoViewRequester(statusPanel)) { StatusPanel(state, actions) }
 
             // ---- AI ----
             ModelsGroup(state, actions) { kind -> confirm = "model:${kind.name}" }
-            PcPanel(state, actions)
+            Box(Modifier.bringIntoViewRequester(pcPanel)) { PcPanel(state, actions) }
 
             // ---- WhatsApp ----
             val quickReady = state.packs.filter { !it.pack.custom }.all { it.added }

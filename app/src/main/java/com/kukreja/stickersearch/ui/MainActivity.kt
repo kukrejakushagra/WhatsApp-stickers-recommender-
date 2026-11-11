@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        if (savedInstanceState == null) vm.handleShareIntent(intent)
+        if (savedInstanceState == null) { vm.handleShareIntent(intent); vm.handleOpenIntent(intent) }
         setContent {
             val ui by vm.state.collectAsStateWithLifecycle()
             val mode = ui.themeMode
@@ -55,5 +55,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         vm.handleShareIntent(intent)
+        vm.handleOpenIntent(intent)
     }
 }

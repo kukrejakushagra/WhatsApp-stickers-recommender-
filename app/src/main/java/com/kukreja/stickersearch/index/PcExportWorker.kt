@@ -25,12 +25,12 @@ class PcExportWorker(context: Context, params: WorkerParameters) : CoroutineWork
     override suspend fun doWork(): Result {
         val ctx = applicationContext
         val out = Uri.parse(inputData.getString(KEY_URI) ?: return Result.failure(workDataOf(KEY_ERROR to "No file to write to.")))
-        runCatching { setForeground(IndexNotification.info(ctx, 0, 0, TITLE)) }
+        runCatching { setForeground(IndexNotification.info(ctx, 0, 0, TITLE, IndexNotification.TARGET_PC)) }
         val events = EventLog(File(ctx.filesDir, "events.jsonl"))
         return try {
             val r = PcBridge.export(ctx, StickerDatabase.get(ctx), out, all = inputData.getBoolean(KEY_ALL, false)) { done, total ->
                 setProgress(workDataOf(KEY_DONE to done, KEY_TOTAL to total))
-                IndexNotification.update(ctx, done, total, TITLE)
+                IndexNotification.update(ctx, done, total, TITLE, IndexNotification.TARGET_PC)
             }
             events.add("pc_export", mapOf("written" to r.written, "total" to r.total, "skipped" to r.skipped.toString()))
             Result.success(workDataOf(
@@ -55,7 +55,7 @@ class PcExportWorker(context: Context, params: WorkerParameters) : CoroutineWork
         File(ctx.cacheDir, "pc-export.zip").delete()
     }
 
-    override suspend fun getForegroundInfo() = IndexNotification.info(applicationContext, 0, 0, TITLE)
+    override suspend fun getForegroundInfo() = IndexNotification.info(applicationContext, 0, 0, TITLE, IndexNotification.TARGET_PC)
 
     companion object {
         const val UNIQUE = "pc-export"

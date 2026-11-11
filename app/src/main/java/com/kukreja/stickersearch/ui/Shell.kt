@@ -88,6 +88,7 @@ data class AppActions(
     val refreshPackInWhatsApp: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
     val dismissSendMissed: () -> Unit = {},
     val setAlwaysRefresh: (Boolean) -> Unit = {},
+    val settingsOpened: () -> Unit = {},
     val readdPack: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
 )
 
@@ -180,6 +181,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             refreshPackInWhatsApp = { pack -> vm.refreshPackInWhatsApp(pack) { intent -> addPack.launch(intent) } },
             dismissSendMissed = vm::dismissSendMissed,
             setAlwaysRefresh = vm::setAlwaysRefresh,
+            settingsOpened = vm::consumeOpenSettings,
             exportDescriptions = {
                 descriptionsExport.launch("sticker-descriptions-%s.jsonl".format(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())))
             },
@@ -199,6 +201,14 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
     var selected by remember { mutableStateOf<StickerRow?>(null) }
     androidx.compose.runtime.LaunchedEffect(state.openSearch) {
         if (state.openSearch) { tab = Tab.SEARCH.ordinal; onSearchOpened() }
+    }
+    // A tapped notification: Settings, where SettingsScreen scrolls to the panel and clears the flag.
+    androidx.compose.runtime.LaunchedEffect(state.openSettingsAt) {
+        if (state.openSettingsAt != null) {
+            selected = null
+            if (state.selecting) actions.stopSelecting()
+            tab = Tab.SETTINGS.ordinal
+        }
     }
     KdsGround(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().statusBarsPadding()) {

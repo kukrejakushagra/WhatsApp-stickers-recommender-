@@ -175,6 +175,8 @@ data class UiState(
     val sendMissed: StickerPacks.Pack? = null,
     /** Every send refreshes the pack in WhatsApp first. */
     val alwaysRefresh: Boolean = false,
+    /** A tapped notification asked for Settings at this panel ("status" or "pc"). */
+    val openSettingsAt: String? = null,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -1169,6 +1171,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * A screenshot (or any image) shared into the app becomes the attachment for the next search.
      * It's copied into the app's cache at once: the sharing app's read permission is temporary.
      */
+    /** A tapped notification: open Settings at the panel it's about. Read once, then removed. */
+    fun handleOpenIntent(intent: Intent?) {
+        val target = intent?.getStringExtra(com.kukreja.stickersearch.index.IndexNotification.EXTRA_OPEN) ?: return
+        intent.removeExtra(com.kukreja.stickersearch.index.IndexNotification.EXTRA_OPEN)
+        _state.update { it.copy(openSettingsAt = target) }
+    }
+
+    fun consumeOpenSettings() = _state.update { it.copy(openSettingsAt = null) }
+
     fun handleShareIntent(intent: Intent?) {
         if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return
         val streams = when (intent.action) {
