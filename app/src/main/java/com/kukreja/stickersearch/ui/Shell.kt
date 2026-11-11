@@ -84,6 +84,10 @@ data class AppActions(
     val setThemeMode: (ThemeMode) -> Unit = {},
     val exportForPc: (all: Boolean) -> Unit = {},
     val importPcResults: () -> Unit = {},
+    val exportDescriptions: () -> Unit = {},
+    val refreshPackInWhatsApp: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
+    val dismissSendMissed: () -> Unit = {},
+    val setAlwaysRefresh: (Boolean) -> Unit = {},
     val readdPack: (com.kukreja.stickersearch.share.StickerPacks.Pack) -> Unit = {},
 )
 
@@ -105,6 +109,9 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     val pcExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportForPc(uri, exportAll[0])
     }
+    val descriptionsExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        if (uri != null) vm.exportDescriptions(uri)
+    }
     val pcImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importPcResults(uri)
     }
@@ -113,7 +120,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     }
     // Asked on the first scan: lets the long-task progress notification show. Denying is fine.
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshPermissions() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshPermissions(); vm.checkLastSend() }
     fun askNotifications() {
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -170,6 +177,12 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             setThemeMode = vm::setThemeMode,
             exportForPc = { all -> exportAll[0] = all; pcExport.launch(if (all) "sticker-search-export-all.zip" else "sticker-search-export.zip") },
             importPcResults = { pcImport.launch(arrayOf("*/*")) },
+            refreshPackInWhatsApp = { pack -> vm.refreshPackInWhatsApp(pack) { intent -> addPack.launch(intent) } },
+            dismissSendMissed = vm::dismissSendMissed,
+            setAlwaysRefresh = vm::setAlwaysRefresh,
+            exportDescriptions = {
+                descriptionsExport.launch("sticker-descriptions-%s.jsonl".format(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())))
+            },
             setUpQuickSend = { vm.setUpQuickSend { intent -> addPack.launch(intent) } },
             readdPack = { pack -> vm.readdPack(pack) { intent -> addPack.launch(intent) } },
         )

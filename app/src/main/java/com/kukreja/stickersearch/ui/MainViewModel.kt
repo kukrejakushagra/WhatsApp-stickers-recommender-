@@ -171,6 +171,10 @@ data class UiState(
     val pcProgress: String? = null,
     /** The sticker being sent to WhatsApp right now; its send button shows a spinner. */
     val sendingId: Long? = null,
+    /** WhatsApp didn't pick up the last sticker sent from this pack (shows a banner). */
+    val sendMissed: StickerPacks.Pack? = null,
+    /** Every send refreshes the pack in WhatsApp first. */
+    val alwaysRefresh: Boolean = false,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -216,7 +220,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val sharer = StickerSharer(app, events)
 
     private val uiPrefs = app.getSharedPreferences("ui", Context.MODE_PRIVATE)
-    private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length(), themeMode = savedThemeMode()))
+    private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length(), themeMode = savedThemeMode(), alwaysRefresh = StickerPacks.alwaysRefresh(app)))
     val state: StateFlow<UiState> = _state
     private var searchJob: Job? = null
     private val graphRepo = com.kukreja.stickersearch.graph.GraphRepository(app)
@@ -477,6 +481,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Writes this phone's descriptions (and edits) for another phone to import. */
+    fun exportDescriptions(out: Uri) {
+        if (_state.value.pcProgress != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(pcProgress = "Saving descriptions") }
+            runCatching { com.kukreja.stickersearch.index.PcBridge.exportDescriptions(ctx, db, repo, out) }
+                .onSuccess { n ->
+                    events.add("descriptions_export", mapOf("stickers" to n))
+                    toast(if (n == 0) "Nothing is described yet, so there's nothing to share."
+                        else "Saved %,d descriptions. On your other phone, use Import results and pick this file.".format(n))
+                }
+                .onFailure { e ->
+                    runCatching { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, out) }
+                    toast("Couldn't save the descriptions: ${e.message}")
+                }
+            _state.update { it.copy(pcProgress = null) }
+        }
+    }
+
     fun importPcResults(src: Uri) {
         if (_state.value.pcProgress != null) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -487,22 +510,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }.onSuccess { r ->
                 events.add("pc_import", mapOf("saved" to r.saved, "replacedPhone" to r.replacedPhone, "already" to r.alreadyImported,
-                    "unreadable" to r.unreadable, "unknown" to r.unknown, "cutOffTail" to r.cutOffTail))
+                    "alreadyDescribed" to r.alreadyDescribed, "edits" to r.editsAdded, "unreadable" to r.unreadable,
+                    "notHere" to r.notHere, "cutOffTail" to r.cutOffTail))
                 toast(buildString {
-                    append(if (r.saved == 0 && r.alreadyImported > 0) "Nothing new: all %,d were already imported.".format(r.alreadyImported)
-                        else "Imported %,d descriptions.".format(r.saved))
+                    append(when {
+                        r.saved > 0 -> "Imported %,d descriptions.".format(r.saved)
+                        r.editsAdded > 0 -> "No new descriptions."
+                        r.alreadyImported + r.alreadyDescribed > 0 -> "Nothing new: these stickers already have descriptions."
+                        else -> "Nothing to import from that file."
+                    })
                     val notes = buildList {
                         if (r.replacedPhone > 0) add("%,d replaced the phone's own".format(r.replacedPhone))
-                        if (r.alreadyImported > 0 && r.saved > 0) add("%,d already imported".format(r.alreadyImported))
+                        if (r.editsAdded > 0) add("%,d of your edits added".format(r.editsAdded))
+                        if (r.alreadyImported > 0) add("%,d already imported".format(r.alreadyImported))
+                        if (r.alreadyDescribed > 0) add("%,d already described here, kept".format(r.alreadyDescribed))
+                        if (r.notHere > 0) add("%,d not on this phone (deleted or from another device), skipped".format(r.notHere))
                         if (r.unreadable > 0) add("%,d couldn't be read".format(r.unreadable))
-                        if (r.unknown > 0) add("%,d aren't in this library".format(r.unknown))
                     }
                     if (notes.isNotEmpty()) append(" (").append(notes.joinToString(", ")).append(")")
-                    if (r.saved > 0) append(" Search vectors and related stickers update in the background.")
-                    append(" Importing the same file again later is safe.")
+                    if (r.saved + r.editsAdded > 0) append(" Search vectors and related stickers update in the background.")
                 })
-                // Text vectors (cleared for every new description) and the graph, after any run in progress.
-                if (r.saved > 0) AiWorker.enqueueAfterImport(ctx)
+                // Text vectors (cleared for every new description or edit) and the graph, after any run in progress.
+                if (r.saved + r.editsAdded > 0) AiWorker.enqueueAfterImport(ctx)
             }.onFailure { toast("Import failed: ${it.message}") }
             _state.update { it.copy(pcProgress = null) }
         }
@@ -817,9 +846,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             events.add("pack_send", mapOf("step" to "no_whatsapp", "error" to e.message))
                             toast("WhatsApp didn't open. Check it is installed, then try again.")
                         }
-                    } else if (missedLast) {
-                        // WhatsApp hasn't re-read the pack since it last changed: showing it the pack again
-                        // makes it read the current stickers. Then WhatsApp opens.
+                    } else if (missedLast || StickerPacks.alwaysRefresh(ctx)) {
+                        // WhatsApp hasn't re-read the pack since it last changed (or it often misses updates):
+                        // showing it the pack again makes it read the current stickers. Then WhatsApp opens.
                         events.add("pack_send", mapOf("step" to "refresh", "pack" to result.pack.id,
                             "version" to StickerPacks.version(ctx, result.pack), "lastRead" to StickerPacks.lastReadVersion(ctx, result.pack)))
                         pendingPack = result.pack
@@ -832,6 +861,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             toast("WhatsApp didn't open. Check it is installed, then try again.")
                         }
                     } else if (StickerPacks.openWhatsApp(activity)) {
+                        StickerPacks.recordSent(ctx, result.pack)
                         toast(readyHint(result.pack))
                     } else {
                         toast("WhatsApp didn't open. Check it is installed, then try again.")
@@ -843,6 +873,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(sendingId = null) }
           }
         }
+    }
+
+    /**
+     * When the user comes back after a send: did WhatsApp read the pack's new stickers? If not, a
+     * banner offers to refresh it, and after two misses in a row every send refreshes the pack first.
+     */
+    fun checkLastSend() {
+        viewModelScope.launch(Dispatchers.IO) {
+            for (pack in StickerPacks.Pack.builtIns) {
+                val ok = StickerPacks.checkSent(ctx, pack) ?: continue
+                val misses = StickerPacks.countMiss(ctx, !ok)
+                events.add("pack_send", mapOf("step" to "check", "pack" to pack.id, "whatsappRead" to ok, "missesInARow" to misses))
+                if (ok) { _state.update { it.copy(sendMissed = null) }; continue }
+                val switched = misses >= 2 && !StickerPacks.alwaysRefresh(ctx)
+                if (switched) StickerPacks.setAlwaysRefresh(ctx, true)
+                _state.update { it.copy(sendMissed = pack, alwaysRefresh = StickerPacks.alwaysRefresh(ctx)) }
+                if (switched) toast("WhatsApp keeps missing new stickers, so from now on the pack is refreshed before each send (one extra tap). You can change this in Settings.")
+            }
+        }
+    }
+
+    /** The banner's button: WhatsApp's pack screen makes it re-read the pack, then WhatsApp opens. */
+    fun refreshPackInWhatsApp(pack: StickerPacks.Pack, askToAdd: (Intent) -> Unit) {
+        _state.update { it.copy(sendMissed = null) }
+        pendingPack = pack
+        openAfterAdd = true
+        try { askToAdd(StickerPacks.addToWhatsAppIntent(ctx, pack)) } catch (e: ActivityNotFoundException) {
+            pendingPack = null; openAfterAdd = false
+            toast("WhatsApp didn't open. Check it is installed, then try again.")
+        }
+    }
+
+    fun dismissSendMissed() = _state.update { it.copy(sendMissed = null) }
+
+    fun setAlwaysRefresh(on: Boolean) {
+        StickerPacks.setAlwaysRefresh(ctx, on)
+        _state.update { it.copy(alwaysRefresh = on) }
     }
 
     private var pendingPack: StickerPacks.Pack? = null
@@ -926,6 +993,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             refreshPacks()
             if (added && openNow && pack != null && StickerPacks.openWhatsApp(ctx)) {
+                StickerPacks.recordSent(ctx, pack)
                 toast(readyHint(pack))
                 return@launch
             }

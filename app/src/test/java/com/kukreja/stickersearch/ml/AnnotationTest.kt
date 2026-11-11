@@ -67,4 +67,19 @@ class AnnotationTest {
         assertTrue(a.phrases.contains("haan haan"))
         assertTrue(a.phrases.contains("अच्छा"))
     }
+
+    @Test
+    fun `a detailed PC reply keeps what's visible and the setting as tags`() {
+        val reply = """{"observations": ["man in shirt and tie", "laptop", "slumped at desk"],
+            "description": "Cartoon office worker in a tie slumped over a laptop, exhausted",
+            "text": "", "visible": ["tie", "laptop", "desk"], "setting": ["office", "work meeting"],
+            "emotions": ["frustration"], "intents": ["expressing_frustration_playfully"],
+            "tags": ["tired", "work", "monday"], "phrases": ["so done with work"], "hinglish": ["office ka scene"],
+            "hindi": ["थक गया"], "emoji": "😩", "confidence": 0.9}"""
+        val a = Annotation.parse(reply)!!
+        assertTrue(a.tags.containsAll(listOf("tired", "office", "work meeting", "tie", "laptop")))
+        assertTrue(a.tags.size <= 24)
+        assertTrue(a.phrases.contains("office ka scene"))
+        assertTrue(a.tags.none { it.contains("slumped") })   // observations aren't stored
+    }
 }

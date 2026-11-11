@@ -74,8 +74,9 @@ data class Annotation(
                 text = o.optString("text").trim().let { if (it.equals("none", true) || it == "\"\"") "" else it },
                 emotions = list("emotions", 4).map(::label).filter { it.isNotEmpty() },
                 intents = list("intents", 4).map(::label).filter { it.isNotEmpty() },
-                tags = list("tags", 10).map { it.lowercase() },
-                phrases = (list("phrases", 6) + list("hinglish", 4) + list("hindi", 3)).distinct(),
+                // PC replies also list what's visible and the setting it implies: kept as tags for search.
+                tags = (list("tags", 16) + list("setting", 5) + list("visible", 10)).map { it.lowercase() }.distinct().take(24),
+                phrases = (list("phrases", 8) + list("hinglish", 5) + list("hindi", 3)).distinct(),
                 emoji = o.optString("emoji").trim().take(8),
                 confidence = o.optDouble("confidence", 0.5).toFloat().coerceIn(0f, 1f),
             )

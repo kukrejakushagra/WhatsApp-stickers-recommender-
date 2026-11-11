@@ -103,6 +103,15 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
             val quickReady = state.packs.filter { !it.pack.custom }.all { it.added }
             KdsSettingsGroup("WhatsApp packs", listOf<@Composable () -> Unit>({
                 KdsSettingsRow(
+                    title = "Refresh pack on every send", icon = R.drawable.ic_kds_refresh,
+                    description = "Shows WhatsApp's pack screen before each send, which makes WhatsApp re-read the pack so the new " +
+                        "sticker is surely there. One extra tap. Turns on by itself if WhatsApp misses new stickers twice in a row.",
+                    trailing = {
+                        KdsFilterChip(if (state.alwaysRefresh) "On" else "Off", state.alwaysRefresh, { actions.setAlwaysRefresh(!state.alwaysRefresh) })
+                    },
+                )
+            }, {
+                KdsSettingsRow(
                     title = "Quick send", icon = R.drawable.ic_kds_phone,
                     description = if (quickReady) "Set up. Send in WhatsApp goes straight back to your chat."
                         else "Add both Sticker Search packs to WhatsApp once, so Send in WhatsApp never stops at WhatsApp's Add screen.",
@@ -456,14 +465,20 @@ private fun PcPanel(state: UiState, actions: AppActions) {
                 icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null && everything > 0)
         }
         Spacer(Modifier.height(8.dp))
-        KdsButton("Import results", actions.importPcResults, block = true,
-            icon = R.drawable.ic_kds_folder, enabled = state.pcProgress == null)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KdsButton("Import results", actions.importPcResults, modifier = Modifier.weight(1f),
+                icon = R.drawable.ic_kds_folder, enabled = state.pcProgress == null)
+            KdsButton("Share descriptions", actions.exportDescriptions, variant = ButtonVariant.OUTLINE, modifier = Modifier.weight(1f),
+                icon = R.drawable.ic_kds_share, enabled = state.pcProgress == null && state.ai.counts.annotated > 0)
+        }
         Spacer(Modifier.height(6.dp))
         KdsInfo(
-            "New or all?",
+            "New, all, or share?",
             "Export new: only stickers not described yet. Export all: the PC redoes the phone's descriptions too, and " +
                 "its versions replace them on import. Your own edits always stay on top. Describing on the phone pauses " +
-                "after an export, since the PC's results will replace its work.",
+                "after an export, since the PC's results will replace its work. Share descriptions saves everything " +
+                "described here (and your edits) to a file; on another phone, Import results adds them to the same " +
+                "stickers, matched by each file's fingerprint, so nothing is described twice.",
             style = Kds.type.caption, color = Kds.colors.mutedForeground,
         )
     }

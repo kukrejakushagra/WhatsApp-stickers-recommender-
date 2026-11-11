@@ -62,7 +62,7 @@ class GemmaAnnotator private constructor(
     override fun close() { runCatching { llm.close() } }
 
     companion object {
-        const val PROMPT_VERSION = 1
+        const val PROMPT_VERSION = 2
         const val MAX_IMAGES = 3
         const val MODEL_NAME = "gemma-3n-e2b-it-int4"
         private const val SIDE = 512
@@ -111,6 +111,7 @@ class GemmaAnnotator private constructor(
                 durationMs?.let { append(", lasting about ${(it / 100) / 10.0} seconds") }
                 append(". Describe the movement and what it expresses, not just the character.\n")
             }
+            append("Notice clothing, props and setting and what they suggest (a tie or suit: office or formal; a helmet: riding; a party hat: birthday).\n")
             append("Reply with one JSON object and nothing else, with these keys:\n")
             append("\"description\": one sentence saying what is shown and what it expresses (e.g. \"Cartoon cat banging its head on a wall in exaggerated frustration\"),\n")
             append("\"text\": any words written in the sticker, exactly, or \"\",\n")

@@ -34,6 +34,13 @@ Pause and continue
 - Want results while it's still running? Copy results-snapshot.jsonl instead (always complete,
   updated every 50 stickers).
 
+Redo stickers with the improved prompt
+--------------------------------------
+This version asks the model to look closely first (clothing, props, setting, text, what they
+suggest), so descriptions are richer. To redo stickers an older version already described, rename
+results.jsonl (e.g. to results-old.jsonl) and start again. When you import the new file, its
+descriptions replace the older ones.
+
 Back on the phone
 -----------------
 Copy results.jsonl from this folder to your phone (USB cable, or any way you like). In Sticker

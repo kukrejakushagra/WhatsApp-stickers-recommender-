@@ -67,6 +67,10 @@ interface AiDao {
     @Query("SELECT * FROM stickers WHERE status IN ('PENDING', 'NEEDS_REVIEW', 'FAILED') ORDER BY id")
     suspend fun undescribed(): List<StickerEntity>
 
+    /** Stickers with a description or an edit of the user's: what "Export descriptions" shares. */
+    @Query("SELECT * FROM stickers WHERE status = 'INDEXED' OR id IN (SELECT sticker_id FROM user_corrections) ORDER BY id")
+    suspend fun describedOrEdited(): List<StickerEntity>
+
     /** Every sticker still on the phone, for an export where the PC redoes the phone's descriptions too. */
     @Query("SELECT * FROM stickers WHERE status != 'MISSING' ORDER BY id")
     suspend fun allForPc(): List<StickerEntity>

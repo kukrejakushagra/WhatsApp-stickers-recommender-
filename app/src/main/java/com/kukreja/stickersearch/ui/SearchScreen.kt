@@ -87,6 +87,15 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     val monthFmt = remember { java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.getDefault()) }
     // Back to the top when switching between browsing and results, or changing the filter.
     LaunchedEffect(browsing, filter) { gridState.scrollToItem(0) }
+    // Back first undoes what's on screen (selection, attached images, the search), and only then
+    // leaves the app.
+    androidx.activity.compose.BackHandler(enabled = selecting || assist.attachments.isNotEmpty() || s.query.isNotEmpty()) {
+        when {
+            selecting -> actions.stopSelecting()
+            assist.attachments.isNotEmpty() -> actions.clearAssist()
+            else -> actions.onQueryChange("")
+        }
+    }
     val scrolled by remember { derivedStateOf { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0 } }
     Column(Modifier.fillMaxSize()) {
     // ---- Pinned: the search box, and the library filters (or the results line) ----
@@ -142,6 +151,16 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         // ---- Scrolls away: everything else above the stickers ----
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
+                state.sendMissed?.let { pack ->
+                    KdsCallout(
+                        "WhatsApp hasn't picked up the sticker you just sent. Refreshing the pack makes it show up.",
+                        CalloutTone.WARNING, title = "Sticker not in WhatsApp yet?",
+                    )
+                    Row(Modifier.padding(top = 8.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        KdsButton("Refresh in WhatsApp", { actions.refreshPackInWhatsApp(pack) }, size = ButtonSize.SM, icon = R.drawable.ic_kds_refresh)
+                        KdsButton("Dismiss", actions.dismissSendMissed, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+                    }
+                }
                 if (assist.attachments.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
                     AttachmentRow(assist.attachments, actions.removeAttachment)

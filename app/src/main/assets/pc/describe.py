@@ -65,14 +65,14 @@ def ask_ollama(args, prompt: str, image_b64: str) -> str:
     body = {
         "model": args.model, "prompt": prompt, "images": [image_b64], "stream": False,
         "format": "json", "keep_alive": "30m",
-        "options": {"temperature": 0.2, "top_k": 20, "num_predict": 900},
+        "options": {"temperature": 0.2, "top_k": 20, "num_predict": 1500},
     }
     return post(args.url.rstrip("/") + "/api/generate", body, args.timeout)["response"]
 
 
 def ask_openai(args, prompt: str, image_b64: str) -> str:
     body = {
-        "model": args.model, "temperature": 0.2, "max_tokens": 900,
+        "model": args.model, "temperature": 0.2, "max_tokens": 1500,
         "messages": [{"role": "user", "content": [
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image_b64}},
@@ -82,6 +82,68 @@ def ask_openai(args, prompt: str, image_b64: str) -> str:
     headers = {"Authorization": "Bearer " + key} if key else None
     reply = post(args.url.rstrip("/") + "/chat/completions", body, args.timeout, headers)
     return reply["choices"][0]["message"]["content"]
+
+
+PC_PROMPT_VERSION = 2
+
+CHECKLIST = """First notice everything that could matter:
+- Who or what: person, animal, cartoon or object. Name well-known cartoon, anime or meme characters only if you are sure; never guess the names of real people.
+- Face and body: expression, eyes, gestures, posture, what the hands are doing.
+- Clothing and accessories, and what they suggest: a tie, suit or ID badge suggests office, work or a formal occasion; a uniform suggests that job or school; a helmet suggests riding or cycling; a party hat suggests a birthday; pyjamas suggest bedtime or a lazy day.
+- Objects and props, and the activity they suggest: laptop, phone, coffee, money, food, books, steering wheel, gym weights, gifts.
+- Setting and background: office, classroom, home, bed, kitchen, road, gym, beach, stage, hospital, rain; also time of day, weather, season, and festivals or occasions (Diwali, Holi, Eid, Christmas, a wedding, a cricket match).
+- Text, emoji and symbols in the picture: copy text exactly; note its language and script.
+- Motion and story, for animated stickers: what changes from frame to frame.
+- References: a famous meme format, film or TV scene, or Bollywood dialogue, if you recognise it.
+
+Then work out when someone would send it: what they mean, to whom (friend, family, colleague, partner), and in what situation (morning greeting, Monday at work, exam stress, payday, traffic, a late reply). Only state what is visible or strongly implied; don't invent details."""
+
+
+def _vocab_from_old_prompt(prompt: str, key: str) -> list:
+    """Exports made before the manifest listed the vocabularies: read them out of the old prompt text."""
+    marker = f'"{key}": 1-4 of ['
+    i = prompt.find(marker)
+    if i < 0:
+        return []
+    j = prompt.find("]", i)
+    return [w.strip() for w in prompt[i + len(marker):j].split(",") if w.strip()]
+
+
+def build_prompt(item: dict, manifest: dict, style: str) -> str:
+    """The prompt for one sticker. "pc" (default) asks a bigger model to look closely first."""
+    if style == "app":
+        return item["prompt"]
+    emotions = manifest.get("emotions_vocab") or _vocab_from_old_prompt(item.get("prompt", ""), "emotions")
+    intents = manifest.get("intents_vocab") or _vocab_from_old_prompt(item.get("prompt", ""), "intents")
+    animated = bool(item.get("animated"))
+    lines = ["You are labelling a WhatsApp sticker so someone can find it later by typing what they want to say in a chat. "
+             "Study the picture closely before answering."]
+    if animated:
+        secs = item.get("duration_ms")
+        lasting = f", lasting about {secs / 1000:.1f} seconds" if secs else ""
+        lines.append("The picture shows 4 frames of an animated sticker in time order (left to right, then top to bottom)"
+                     f"{lasting}. Describe what happens across the frames and what it expresses, not just the character.")
+    lines.append("")
+    lines.append(CHECKLIST)
+    lines.append("")
+    emo = f"1-4 of [{', '.join(emotions)}]" if emotions else "1-4 single words"
+    inte = f"1-4 of [{', '.join(intents)}]" if intents else "1-4 short snake_case labels such as responding_to_joke"
+    lines.append("Reply with one JSON object and nothing else, with these keys in this order:")
+    lines.append('"observations": 5-12 short notes of the concrete details you noticed,')
+    lines.append('"description": one or two sentences: who or what is shown, the setting or context it implies, and what it expresses '
+                 '(e.g. "Cartoon office worker in a shirt and tie slumped over a laptop, exhausted by a long workday"),')
+    lines.append('"text": any words written in the sticker, exactly, or "",')
+    lines.append('"visible": 3-10 concrete things visible (objects, clothing, props, setting) as short English words,')
+    lines.append('"setting": 1-5 situations or contexts it implies (e.g. "office", "work meeting", "birthday", "road trip"),')
+    lines.append(f'"emotions": {emo},')
+    lines.append(f'"intents": {inte},')
+    lines.append('"tags": 8-16 short English search words covering who, what, mood, setting and situation,')
+    lines.append('"phrases": 5-8 short things someone might type to find it, in English,')
+    lines.append('"hinglish": 3-5 such phrases in romanized Hindi (e.g. "kya bakwas hai", "office ka scene"),')
+    lines.append('"hindi": 1-3 such phrases in Devanagari,')
+    lines.append('"emoji": one emoji that fits,')
+    lines.append('"confidence": a number from 0 to 1 for how sure you are of the meaning.')
+    return "\n".join(lines)
 
 
 def readable(raw: str) -> bool:
@@ -216,6 +278,8 @@ def main(interactive: bool) -> None:
     p.add_argument("--url", default=None, help="server address (default http://localhost:11434, or http://localhost:1234/v1 for --api openai)")
     p.add_argument("--workers", type=int, default=1, help="stickers in parallel (raise it if your server handles parallel requests)")
     p.add_argument("--limit", type=int, default=0, help="stop after this many stickers (to try it out)")
+    p.add_argument("--prompt", choices=["pc", "app"], default="pc",
+                   help="pc (default): a detailed look-first prompt for bigger models; app: the phone's shorter prompt")
     p.add_argument("--timeout", type=float, default=300, help="seconds to wait for one reply")
     p.add_argument("--out", default=None, help="results file (default results.jsonl in the export folder)")
     p.add_argument("--allow-remote", action="store_true", help="allow a model server that isn't on this machine or your home network")
@@ -281,7 +345,7 @@ def main(interactive: bool) -> None:
         t0 = time.time()
         raw = ""
         for _ in range(3):
-            raw = ask(args, item["prompt"], image)
+            raw = ask(args, build_prompt(item, manifest, args.prompt), image)
             if readable(raw):
                 break
         return item, raw, time.time() - t0
@@ -339,6 +403,7 @@ def main(interactive: bool) -> None:
                     continue
                 line = json.dumps({"sha256": item["sha256"], "model": args.model, "raw": raw,
                                    "prompt_version": manifest.get("prompt_version", 1),
+                                   "pc_prompt": PC_PROMPT_VERSION if args.prompt == "pc" else 0,
                                    "seconds": round(secs, 1)}, ensure_ascii=False) + "\n"
                 # One write per sticker, pushed to disk, so a copy taken now is at worst one line short.
                 out.write(line)

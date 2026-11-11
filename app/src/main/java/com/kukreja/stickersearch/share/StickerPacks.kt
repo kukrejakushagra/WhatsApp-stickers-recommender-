@@ -308,6 +308,39 @@ object StickerPacks {
         return if (emojiLike) first else "🙂"
     }
 
+    // ---- did WhatsApp pick up the sticker just sent? ----
+
+    /** Called when WhatsApp is opened for a send: the version it should now show. */
+    fun recordSent(ctx: Context, pack: Pack) {
+        prefs(ctx).edit().putInt("${pack.id}_sent_v", version(ctx, pack)).putLong("${pack.id}_sent_at", System.currentTimeMillis())
+            .putBoolean("${pack.id}_sent_checked", false).apply()
+    }
+
+    /**
+     * Checked once, when the user comes back to the app 5 s to 10 min after a send: true if WhatsApp
+     * read the pack's new sticker list, false if it didn't, null when there's nothing to check.
+     */
+    fun checkSent(ctx: Context, pack: Pack): Boolean? {
+        val p = prefs(ctx)
+        val at = p.getLong("${pack.id}_sent_at", 0)
+        val age = System.currentTimeMillis() - at
+        if (at == 0L || p.getBoolean("${pack.id}_sent_checked", true) || age < 5_000) return null
+        p.edit().putBoolean("${pack.id}_sent_checked", true).apply()
+        if (age > 10 * 60_000) return null
+        return lastReadVersion(ctx, pack) >= p.getInt("${pack.id}_sent_v", 0)
+    }
+
+    /** After repeated misses, every send goes through WhatsApp's pack screen, which makes it re-read the pack. */
+    fun alwaysRefresh(ctx: Context) = prefs(ctx).getBoolean("always_refresh", false)
+    fun setAlwaysRefresh(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("always_refresh", on).putInt("miss_count", 0).apply()
+
+    /** Counts misses in a row; returns the new count (0 after a hit). */
+    fun countMiss(ctx: Context, missed: Boolean): Int {
+        val n = if (missed) prefs(ctx).getInt("miss_count", 0) + 1 else 0
+        prefs(ctx).edit().putInt("miss_count", n).apply()
+        return n
+    }
+
     fun markAdded(ctx: Context, pack: Pack, added: Boolean) =
         prefs(ctx).edit().putBoolean("${pack.id}_added", added).apply()
 
