@@ -62,8 +62,18 @@ object IndexNotification {
             .build()
     }
 
-    fun info(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers", target: String = TARGET_STATUS) =
-        ForegroundInfo(ID, build(ctx, done, total, title, target), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+    /**
+     * Long runs keep going in the background as a foreground task: "media processing" on
+     * Android 15+, "data sync" on 10-14 (media processing doesn't exist there), untyped on 9.
+     */
+    fun info(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers", target: String = TARGET_STATUS): ForegroundInfo {
+        val n = build(ctx, done, total, title, target)
+        return when {
+            android.os.Build.VERSION.SDK_INT >= 35 -> ForegroundInfo(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+            android.os.Build.VERSION.SDK_INT >= 29 -> ForegroundInfo(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            else -> ForegroundInfo(ID, n)
+        }
+    }
 
     fun update(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers", target: String = TARGET_STATUS) {
         runCatching { ctx.getSystemService(NotificationManager::class.java).notify(ID, build(ctx, done, total, title, target)) }

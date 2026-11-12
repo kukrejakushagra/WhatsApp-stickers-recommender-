@@ -59,6 +59,12 @@ data class Permissions(
     val safTree: Uri?,
     val safHeld: Boolean,
     val allFiles: Boolean,
+    /** WhatsApp Business's Media folder, picked separately when that app is installed. */
+    val businessTree: Uri? = null,
+    val businessHeld: Boolean = false,
+    /** Installed WhatsApp apps (regular first) and the one stickers are sent with. */
+    val whatsApps: List<String> = emptyList(),
+    val sendWith: String = "com.whatsapp",
 ) {
     val safTreeId: String? get() = safTree?.let { android.provider.DocumentsContract.getTreeDocumentId(it) }
 
@@ -179,6 +185,12 @@ data class UiState(
     val openSettingsAt: String? = null,
     /** Animated stickers play (twice) in the grid while on screen. */
     val animateGrid: Boolean = true,
+    /** A send waiting for the user to pick WhatsApp or WhatsApp Business. */
+    val chooseAppFor: StickerRow? = null,
+    /** This phone's memory, and whether describing can run here (or the user said "Try anyway"). */
+    val memoryGb: Double = 0.0,
+    val phoneCanDescribe: Boolean = true,
+    val describeAnyway: Boolean = false,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -224,7 +236,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val sharer = StickerSharer(app, events)
 
     private val uiPrefs = app.getSharedPreferences("ui", Context.MODE_PRIVATE)
-    private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length(), themeMode = savedThemeMode(), animateGrid = uiPrefs.getBoolean("animate_grid", true), alwaysRefresh = StickerPacks.alwaysRefresh(app)))
+    private val _state = MutableStateFlow(UiState(readPermissions(), eventCount = events.all().length(), themeMode = savedThemeMode(),
+        memoryGb = com.kukreja.stickersearch.device.DeviceCaps.memoryGb(app),
+        phoneCanDescribe = com.kukreja.stickersearch.device.DeviceCaps.phoneCanDescribe(app),
+        describeAnyway = com.kukreja.stickersearch.device.DeviceCaps.describeAnyway(app), animateGrid = uiPrefs.getBoolean("animate_grid", true), alwaysRefresh = StickerPacks.alwaysRefresh(app)))
     val state: StateFlow<UiState> = _state
     private var searchJob: Job? = null
     private val graphRepo = com.kukreja.stickersearch.graph.GraphRepository(app)
@@ -338,15 +353,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun readPermissions(): Permissions {
         val tree = prefs.getString(IndexWorker.KEY_TREE, null)?.let(Uri::parse)
         val held = tree != null && ctx.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }
-        return Permissions(tree, held, Environment.isExternalStorageManager())
+        val business = prefs.getString(IndexWorker.KEY_TREE_BUSINESS, null)?.let(Uri::parse)
+        val businessHeld = business != null && ctx.contentResolver.persistedUriPermissions.any { it.uri == business && it.isReadPermission }
+        return Permissions(tree, held, com.kukreja.stickersearch.compat.Compat.canReadAllFiles(ctx), business, businessHeld,
+            StickerPacks.installedApps(ctx), StickerPacks.target(ctx))
     }
 
     private fun batteryUnrestricted() = ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName)
 
-    fun onTreePicked(uri: Uri?) {
+    fun onTreePicked(uri: Uri?, business: Boolean = false) {
         if (uri == null) return
         ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        prefs.edit().putString(IndexWorker.KEY_TREE, uri.toString()).apply()
+        prefs.edit().putString(if (business) IndexWorker.KEY_TREE_BUSINESS else IndexWorker.KEY_TREE, uri.toString()).apply()
         events.add("saf_tree_picked", mapOf("treeDocumentId" to android.provider.DocumentsContract.getTreeDocumentId(uri)))
         refreshPermissions()
     }
@@ -422,6 +440,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Runs all AI passes now, including annotation on battery (the user asked). */
+    fun setDescribeAnyway(on: Boolean) {
+        com.kukreja.stickersearch.device.DeviceCaps.setDescribeAnyway(ctx, on)
+        _state.update { it.copy(describeAnyway = on) }
+        if (on) toast("Describing will be tried on this phone. If the app keeps closing, it pauses itself.")
+    }
+
     fun setAnimateGrid(on: Boolean) {
         uiPrefs.edit().putBoolean("animate_grid", on).apply()
         _state.update { it.copy(animateGrid = on) }
@@ -805,7 +829,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * [askToAdd] must launch WhatsApp's ENABLE_STICKER_PACK intent *for a result*: WhatsApp only shows its
      * "Add sticker pack" screen to a caller it can identify, and reports validation errors in the result.
      */
+    /** Both WhatsApp apps installed and none chosen yet: the dialog asks, then this sends. */
+    fun chooseWhatsApp(pkg: String): StickerRow? {
+        StickerPacks.setTarget(ctx, pkg)
+        val row = _state.value.chooseAppFor
+        _state.update { it.copy(chooseAppFor = null) }
+        refreshPermissions()
+        return row
+    }
+
+    fun cancelChooseWhatsApp() = _state.update { it.copy(chooseAppFor = null) }
+
+    fun setSendWith(pkg: String) { StickerPacks.setTarget(ctx, pkg); refreshPermissions() }
+
     fun sendViaWhatsApp(activity: Context, s: StickerRow, askToAdd: (Intent) -> Unit) {
+        if (StickerPacks.needsAppChoice(ctx)) { _state.update { it.copy(chooseAppFor = s) }; return }
         // One at a time: a second tap while the first is still preparing is ignored.
         if (_state.value.sendingId != null) return
         _state.update { it.copy(sendingId = s.id) }
@@ -1089,7 +1127,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(diagnosticRunning = true) }
         viewModelScope.launch {
             val outcome = runCatching {
-                diagnosticEngine.run(listOf(SafTreeSource(ctx, p.safTree), FileSystemSource(), SharedInSource(importDir))) {}
+                diagnosticEngine.run(listOf(SafTreeSource(ctx, listOfNotNull(p.safTree, p.businessTree)), FileSystemSource(ctx), SharedInSource(importDir))) {}
             }
             _state.update {
                 it.copy(
@@ -1203,8 +1241,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun handleShareIntent(intent: Intent?) {
         if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return
         val streams = when (intent.action) {
-            Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java))
-            else -> intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+            Intent.ACTION_SEND -> listOfNotNull(com.kukreja.stickersearch.compat.Compat.streamOf(intent))
+            else -> com.kukreja.stickersearch.compat.Compat.streamsOf(intent)
         }
         // Some screenshot tools only fill in ClipData.
         val clip = intent.clipData?.let { c -> (0 until c.itemCount).mapNotNull { c.getItemAt(it).uri } }.orEmpty()

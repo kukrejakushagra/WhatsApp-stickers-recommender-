@@ -41,6 +41,9 @@ import com.kukreja.stickersearch.ui.kds.NavItem
 /** Everything the screens can ask for; keeps the screens stateless. */
 data class AppActions(
     val pickFolder: () -> Unit = {},
+    val pickBusinessFolder: () -> Unit = {},
+    val setSendWith: (String) -> Unit = {},
+    val setDescribeAnyway: (Boolean) -> Unit = {},
     val openAllFiles: () -> Unit = {},
     val scan: (retryFailed: Boolean) -> Unit = {},
     val runDiagnostic: () -> Unit = {},
@@ -100,6 +103,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { vm.onTreePicked(it) }
+    val businessTreePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { vm.onTreePicked(it, business = true) }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { vm.importModels(it) }
     val expected = remember { arrayOfNulls<ModelKind>(1) }
     // The system photo picker: no storage permission, and only the images chosen are shared.
@@ -125,13 +129,16 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshPermissions(); vm.checkLastSend() }
     fun askNotifications() {
-        if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        if (com.kukreja.stickersearch.compat.Compat.needsNotificationPermission(context)) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
     val actions = remember(vm) {
         AppActions(
             pickFolder = { treePicker.launch(SafTreeSource.initialStickerFolderUri()) },
+            pickBusinessFolder = { businessTreePicker.launch(SafTreeSource.initialStickerFolderUri(business = true)) },
+            setSendWith = vm::setSendWith,
+            setDescribeAnyway = vm::setDescribeAnyway,
             openAllFiles = openAllFilesSettings,
             scan = { retry -> askNotifications(); vm.scan(retry) },
             runDiagnostic = vm::runDiagnostic,
@@ -193,6 +200,12 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
         )
     }
     AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)
+    if (state.chooseAppFor != null) {
+        ChooseWhatsAppDialog(
+            onChoose = { pkg -> vm.chooseWhatsApp(pkg)?.let { row -> vm.sendViaWhatsApp(context, row) { intent -> addPack.launch(intent) } } },
+            onDismiss = vm::cancelChooseWhatsApp,
+        )
+    }
 }
 
 private enum class Tab { SEARCH, SETTINGS }

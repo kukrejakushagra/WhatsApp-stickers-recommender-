@@ -50,7 +50,7 @@ class StickerSharer(private val context: Context, private val events: EventLog) 
             "width" to sticker.width, "height" to sticker.height, "bytes" to sticker.sizeBytes,
         ))
         return Result.success(when (mode) {
-            Mode.WHATSAPP_DIRECT -> send.setPackage("com.whatsapp")
+            Mode.WHATSAPP_DIRECT -> send.setPackage(com.kukreja.stickersearch.share.StickerPacks.target(context))
             Mode.SYSTEM_SHEET -> Intent.createChooser(send, "Send sticker")
         })
     }
@@ -81,9 +81,9 @@ class StickerSharer(private val context: Context, private val events: EventLog) 
     /** Handles ACTION_SEND / SEND_MULTIPLE into the app: records what WhatsApp hands over. */
     fun importShared(intent: Intent, importDir: File): Int {
         val uris = when (intent.action) {
-            Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java))
+            Intent.ACTION_SEND -> listOfNotNull(com.kukreja.stickersearch.compat.Compat.streamOf(intent))
             Intent.ACTION_SEND_MULTIPLE ->
-                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+                com.kukreja.stickersearch.compat.Compat.streamsOf(intent)
             else -> emptyList()
         }
         importDir.mkdirs()

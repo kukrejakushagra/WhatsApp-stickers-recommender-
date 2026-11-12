@@ -11,11 +11,11 @@ android {
 
     defaultConfig {
         applicationId = "com.kukreja.stickersearch"
-        // Android 16 only for now; see docs/04-roadmap.md "Android version support".
-        minSdk = 36
+        // Android 9+ (API 28): the system decodes animated WebP from there. Newer APIs are version-checked (see compat/).
+        minSdk = 28
         targetSdk = 36
-        versionCode = 37
-        versionName = "0.9.11"
+        versionCode = 40
+        versionName = "1.0.0"
         ndk {
             // The phone is arm64; other ABIs would only add ~100 MB of native ML libraries.
             abiFilters += "arm64-v8a"

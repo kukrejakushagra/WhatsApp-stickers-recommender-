@@ -65,7 +65,7 @@ The sideload build is the minified release, about 32 MB. R8 shrinking takes the 
 
 ## Install
 
-Requires Android 16 (API 36) and an arm64 phone. Sideload `app/build/outputs/apk/release/app-release.apk`, or use adb:
+Works on **Android 9 or newer** (API 28+) with a **64-bit ARM** phone (nearly every phone since about 2017), with **WhatsApp, WhatsApp Business, or both**. Sideload `app/build/outputs/apk/release/app-release.apk`, or use adb:
 
 ```bash
 adb install -r app/build/outputs/apk/release/app-release.apk
@@ -75,7 +75,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 1. **Settings › Sticker access:** pick the Media folder, then **Run scan**.
 2. **Settings › AI models:** import the four files. The visual pass starts on its own.
-3. **Settings › Battery optimisation:** tap **Allow**. On Honor phones, also set the app to "Manage manually" under Battery › App launch.
+3. **Settings › Battery optimisation:** tap **Allow**, and follow the tip shown for your phone's maker.
 4. Leave the phone **charging overnight**. Gemma describes stickers newest first, taking a few nights for about 5,000. **Start now** runs it immediately, on battery too.
 5. **Search:** type what you want to say. Open a result and tap **Send in WhatsApp**. The first time, WhatsApp asks you to add the "Sticker Search" pack. After that, the sticker is first in that pack in WhatsApp's picker.
 
@@ -88,6 +88,9 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 - **Annotation is slow on mid-range phones** (tens of seconds per sticker). Search works by looks until then.
 - **Android decides background timing.** Battery savers can delay runs; every step resumes where it stopped.
 - **Glass panels are frosted, not refracting.** Compose has no backdrop blur without an extra library.
-- **Android 16, arm64 only.** The checklist for older versions is in the Project doc.
+- **Android 9+, 64-bit ARM.** 32-bit and x86 phones aren't supported (the on-phone AI engines ship 64-bit ARM builds).
+- **On-phone describing needs about 6 GB of memory.** On phones with less, it's off by default (Settings › Your stickers › Try anyway turns it on). Use Describe on a PC or Share descriptions there; search by look works on every phone.
+- **WhatsApp Business** keeps its own sticker folder: pick it in Settings › Sticker access › WhatsApp Business folder. With both apps installed, Send asks once which one to use (changeable in Settings › WhatsApp packs).
+- **Battery savers differ by maker.** Settings › Background › Battery optimisation shows the extra step for your phone's maker (Xiaomi, Samsung, OnePlus/Oppo/Realme, Vivo, Huawei/Honor, Asus).
 
 The Geist font is bundled under the SIL Open Font License (`third_party/geist/OFL.txt`).

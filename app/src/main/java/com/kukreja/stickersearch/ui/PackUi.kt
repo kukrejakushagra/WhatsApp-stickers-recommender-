@@ -49,6 +49,26 @@ import com.kukreja.stickersearch.ui.kds.glass
 import com.kukreja.stickersearch.ui.kds.theme.Kds
 import com.kukreja.stickersearch.ui.kds.theme.KdsRadius
 
+/** Both WhatsApp apps are installed: which one should stickers go to? Asked once, remembered. */
+@Composable
+internal fun ChooseWhatsAppDialog(onChoose: (String) -> Unit, onDismiss: () -> Unit) {
+    val shape = RoundedCornerShape(KdsRadius.xl)
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.widthIn(max = 360.dp).shadow(24.dp, shape).glass(Glass.FLOATING, shape)
+                .border(1.dp, Kds.colors.border, shape).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Send with which app?", style = Kds.type.titleSm, color = Kds.colors.foreground)
+            Text("Both WhatsApp and WhatsApp Business are installed. Your choice is remembered; you can change it in " +
+                "Settings › WhatsApp packs.", style = Kds.type.body, color = Kds.colors.mutedForeground)
+            KdsButton("WhatsApp", { onChoose(StickerPacks.WHATSAPP) }, variant = ButtonVariant.BRAND, block = true)
+            KdsButton("WhatsApp Business", { onChoose(StickerPacks.WHATSAPP_BUSINESS) }, variant = ButtonVariant.OUTLINE, block = true)
+            KdsButton("Cancel", onDismiss, variant = ButtonVariant.GHOST, block = true)
+        }
+    }
+}
+
 /** A dialog that asks for a name (new pack, rename). */
 @Composable
 internal fun NameDialog(

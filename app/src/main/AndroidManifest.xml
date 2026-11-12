@@ -9,6 +9,12 @@
     <!-- Long index runs: a foreground "media processing" task with a progress notification. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <!-- Android 10-14 have no "media processing" type: long runs use "data sync" there. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android 9-10: reading WhatsApp's folders by path when no folder was picked. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Lets the user exempt the app from battery optimisation so overnight AI runs aren't cut short. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -19,10 +25,12 @@
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
         <provider android:authorities="com.whatsapp.provider.sticker_whitelist_check" />
+        <provider android:authorities="com.whatsapp.w4b.provider.sticker_whitelist_check" />
     </queries>
 
     <application
         android:allowBackup="false"
+        android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -52,7 +60,7 @@
 
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:foregroundServiceType="mediaProcessing"
+            android:foregroundServiceType="mediaProcessing|dataSync"
             tools:node="merge" />
 
         <receiver android:name=".index.PauseReceiver" android:exported="false" />

@@ -42,4 +42,22 @@ class PathRulesTest {
         assertEquals(2, st.fileCount)
         assertEquals(30, st.totalBytes)
     }
+
+    @Test
+    fun `WhatsApp Business and older-Android folders are found too`() {
+        assertTrue(PathRules.isStickerCandidate("Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Stickers/a.webp"))
+        assertTrue(PathRules.isStickerCandidate("WhatsApp Business/Media/WhatsApp Business Stickers/a.webp"))
+        assertTrue(PathRules.isStickerCandidate("WhatsApp/Media/WhatsApp Stickers/a.webp"))
+        assertTrue(PathRules.shouldDescend("WhatsApp Business/Media"))
+        assertTrue(PathRules.shouldDescend("Android/media/com.whatsapp.w4b/WhatsApp Business/Media"))
+        org.junit.Assert.assertFalse(PathRules.shouldDescend("WhatsApp Business/Media/WhatsApp Business Images"))
+    }
+
+    @Test
+    fun `the folder picker starts where each WhatsApp keeps its media`() {
+        org.junit.Assert.assertEquals("Android/media/com.whatsapp/WhatsApp/Media", PathRules.mediaFolder(business = false, sdk = 34))
+        org.junit.Assert.assertEquals("WhatsApp/Media", PathRules.mediaFolder(business = false, sdk = 29))
+        org.junit.Assert.assertEquals("Android/media/com.whatsapp.w4b/WhatsApp Business/Media", PathRules.mediaFolder(business = true, sdk = 33))
+        org.junit.Assert.assertEquals("WhatsApp Business/Media", PathRules.mediaFolder(business = true, sdk = 28))
+    }
 }

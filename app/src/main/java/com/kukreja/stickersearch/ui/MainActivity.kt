@@ -19,6 +19,8 @@ import com.kukreja.stickersearch.ui.kds.theme.KdsTheme
 class MainActivity : ComponentActivity() {
 
     private val vm: MainViewModel by viewModels()
+    private val storagePermission =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { vm.refreshPermissions() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,9 +45,12 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     vm = vm,
                     openAllFilesSettings = {
-                        startActivity(
-                            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:$packageName".toUri()),
-                        )
+                        // Android 11+: the "All files access" settings page. Android 9-10: the storage permission.
+                        if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:$packageName".toUri()))
+                        } else {
+                            storagePermission.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                        }
                     },
                 )
             }

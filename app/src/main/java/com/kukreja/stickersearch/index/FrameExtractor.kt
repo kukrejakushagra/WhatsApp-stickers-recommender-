@@ -122,7 +122,7 @@ class FrameExtractor(private val context: Context, private val root: File, priva
         val frames = choices.map { ch ->
             val k = kept[ch.index]
             val f = File(dir, "${k.index}.webp")
-            f.outputStream().use { k.bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 85, it) }
+            f.outputStream().use { k.bitmap.compress(com.kukreja.stickersearch.compat.Compat.webpLossy, 85, it) }
             SavedFrame(k.index, k.timestampMs, f.absolutePath, ch.changeScore)
         }
         // Thumbnail: the first meaningful keyframe (WebP) or the middle one (Lottie), copied to thumbs/.

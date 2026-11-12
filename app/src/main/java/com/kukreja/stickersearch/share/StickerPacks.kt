@@ -85,7 +85,7 @@ object StickerPacks {
     fun deletePack(ctx: Context, pack: Pack) {
         if (!pack.custom) return
         saveCustom(ctx, custom(ctx).filter { it.id != pack.id })
-        prefs(ctx).edit().remove(pack.id).remove("${pack.id}_v").remove("${pack.id}_added").apply()
+        prefs(ctx).edit().remove(pack.id).remove("${pack.id}_v").remove("${pack.id}_added").remove("${pack.id}_added_w4b").apply()
         File(ctx.filesDir, "packs/${pack.id}").deleteRecursively()
         notifyWhatsApp(ctx)
     }
@@ -202,7 +202,7 @@ object StickerPacks {
         src.recycle()
         try {
             for (q in listOf(100, 90, 80, 70, 60, 50, 40)) {
-                val fmt = if (q == 100) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.WEBP_LOSSY
+                val fmt = if (q == 100) com.kukreja.stickersearch.compat.Compat.webpLossless else com.kukreja.stickersearch.compat.Compat.webpLossy
                 val o = ByteArrayOutputStream()
                 canvas.compress(fmt, q, o)
                 if (o.size() <= 100 * 1024) return o.toByteArray()
@@ -256,12 +256,42 @@ object StickerPacks {
 
     fun ensureTrays(ctx: Context) = all(ctx).forEach { ensureTray(ctx, it) }
 
+    // ---- which WhatsApp: regular, Business, or both installed ----
+
+    const val WHATSAPP = "com.whatsapp"
+    const val WHATSAPP_BUSINESS = "com.whatsapp.w4b"
+
+    fun appName(pkg: String) = if (pkg == WHATSAPP_BUSINESS) "WhatsApp Business" else "WhatsApp"
+
+    /** The WhatsApp apps installed on this phone, regular first. */
+    fun installedApps(ctx: Context): List<String> =
+        listOf(WHATSAPP, WHATSAPP_BUSINESS).filter { ctx.packageManager.getLaunchIntentForPackage(it) != null }
+
+    /** Both are installed and the user hasn't said which one to send with yet. */
+    fun needsAppChoice(ctx: Context) = shouldAsk(installedApps(ctx), prefs(ctx).getString("wa_target", null))
+
+    fun setTarget(ctx: Context, pkg: String) = prefs(ctx).edit().putString("wa_target", pkg).apply()
+
+    /** The app stickers are sent with: the chosen one, or the only one installed. */
+    fun target(ctx: Context): String = pickTarget(installedApps(ctx), prefs(ctx).getString("wa_target", null))
+
+    /** Pure rule: the saved choice if that app is installed, else the only (or first) one, else WhatsApp. */
+    fun pickTarget(installed: List<String>, saved: String?): String =
+        saved?.takeIf { it in installed } ?: installed.firstOrNull() ?: WHATSAPP
+
+    /** Pure rule: ask only when both are installed and nothing has been chosen. */
+    fun shouldAsk(installed: List<String>, saved: String?) = installed.size > 1 && saved == null
+
+    /** Per-app bookkeeping: regular WhatsApp keeps the original keys, Business gets its own. */
+    private fun key(pack: Pack, name: String, pkg: String) =
+        if (pkg == WHATSAPP_BUSINESS) "${pack.id}_${name}_w4b" else "${pack.id}_$name"
+
     /**
      * WhatsApp's documented whitelist check: true or false, or null when WhatsApp didn't answer.
      * Some WhatsApp builds answer false (or nothing) even for an added pack, so this alone isn't trusted.
      */
-    fun whitelisted(ctx: Context, pack: Pack): Boolean? = runCatching {
-        val uri = Uri.parse("content://com.whatsapp.provider.sticker_whitelist_check/is_whitelisted")
+    fun whitelisted(ctx: Context, pack: Pack, pkg: String = target(ctx)): Boolean? = runCatching {
+        val uri = Uri.parse("content://$pkg.provider.sticker_whitelist_check/is_whitelisted")
             .buildUpon().appendQueryParameter("authority", authority(ctx)).appendQueryParameter("identifier", pack.id).build()
         ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
             if (!c.moveToFirst()) null else c.getInt(c.getColumnIndexOrThrow("result")) == 1
@@ -272,25 +302,27 @@ object StickerPacks {
      * True once WhatsApp has added this pack: its whitelist says so, or it answered "added" to our
      * request earlier. Remembering the answer stops the Add screen from coming back on every send.
      */
-    fun isAdded(ctx: Context, pack: Pack): Boolean {
-        if (whitelisted(ctx, pack) == true) { markAdded(ctx, pack, true); return true }
-        return prefs(ctx).getBoolean("${pack.id}_added", false)
+    fun isAdded(ctx: Context, pack: Pack, pkg: String = target(ctx)): Boolean {
+        if (whitelisted(ctx, pack, pkg) == true) { markAdded(ctx, pack, true, pkg); return true }
+        return prefs(ctx).getBoolean(key(pack, "added", pkg), false)
     }
 
     /** The pack version WhatsApp last read the sticker list of (0: never seen it read). */
-    fun lastReadVersion(ctx: Context, pack: Pack) = prefs(ctx).getInt("${pack.id}_read_v", 0)
+    fun lastReadVersion(ctx: Context, pack: Pack, pkg: String = target(ctx)) = prefs(ctx).getInt(key(pack, "read_v", pkg), 0)
 
     /**
      * Called from the provider when WhatsApp reads a pack's sticker list. Logged once per version,
      * so the diagnostics report shows whether WhatsApp picks up changes by itself.
      */
-    internal fun markRead(ctx: Context, pack: Pack) {
+    internal fun markRead(ctx: Context, pack: Pack, caller: String?) {
+        // Which app is reading: regular WhatsApp or Business keep separate records.
+        val pkg = if (caller == WHATSAPP_BUSINESS) WHATSAPP_BUSINESS else WHATSAPP
         val v = version(ctx, pack)
-        if (lastReadVersion(ctx, pack) == v) return
-        prefs(ctx).edit().putInt("${pack.id}_read_v", v).putLong("${pack.id}_read_at", System.currentTimeMillis()).apply()
+        if (lastReadVersion(ctx, pack, pkg) == v) return
+        prefs(ctx).edit().putInt(key(pack, "read_v", pkg), v).putLong(key(pack, "read_at", pkg), System.currentTimeMillis()).apply()
         runCatching {
             com.kukreja.stickersearch.diagnostics.EventLog(File(ctx.filesDir, "events.jsonl"))
-                .add("whatsapp_read", mapOf("pack" to pack.id, "version" to v, "stickers" to entries(ctx, pack).size))
+                .add("whatsapp_read", mapOf("pack" to pack.id, "app" to pkg, "version" to v, "stickers" to entries(ctx, pack).size))
         }
     }
 
@@ -312,8 +344,9 @@ object StickerPacks {
 
     /** Called when WhatsApp is opened for a send: the version it should now show. */
     fun recordSent(ctx: Context, pack: Pack) {
-        prefs(ctx).edit().putInt("${pack.id}_sent_v", version(ctx, pack)).putLong("${pack.id}_sent_at", System.currentTimeMillis())
-            .putBoolean("${pack.id}_sent_checked", false).apply()
+        val pkg = target(ctx)
+        prefs(ctx).edit().putInt(key(pack, "sent_v", pkg), version(ctx, pack)).putLong(key(pack, "sent_at", pkg), System.currentTimeMillis())
+            .putBoolean(key(pack, "sent_checked", pkg), false).apply()
     }
 
     /**
@@ -322,12 +355,13 @@ object StickerPacks {
      */
     fun checkSent(ctx: Context, pack: Pack): Boolean? {
         val p = prefs(ctx)
-        val at = p.getLong("${pack.id}_sent_at", 0)
+        val pkg = target(ctx)
+        val at = p.getLong(key(pack, "sent_at", pkg), 0)
         val age = System.currentTimeMillis() - at
-        if (at == 0L || p.getBoolean("${pack.id}_sent_checked", true) || age < 5_000) return null
-        p.edit().putBoolean("${pack.id}_sent_checked", true).apply()
+        if (at == 0L || p.getBoolean(key(pack, "sent_checked", pkg), true) || age < 5_000) return null
+        p.edit().putBoolean(key(pack, "sent_checked", pkg), true).apply()
         if (age > 10 * 60_000) return null
-        return lastReadVersion(ctx, pack) >= p.getInt("${pack.id}_sent_v", 0)
+        return lastReadVersion(ctx, pack, pkg) >= p.getInt(key(pack, "sent_v", pkg), 0)
     }
 
     /** After repeated misses, every send goes through WhatsApp's pack screen, which makes it re-read the pack. */
@@ -341,19 +375,19 @@ object StickerPacks {
         return n
     }
 
-    fun markAdded(ctx: Context, pack: Pack, added: Boolean) =
-        prefs(ctx).edit().putBoolean("${pack.id}_added", added).apply()
+    fun markAdded(ctx: Context, pack: Pack, added: Boolean, pkg: String = target(ctx)) =
+        prefs(ctx).edit().putBoolean(key(pack, "added", pkg), added).apply()
 
     /** Asks WhatsApp to add the pack; WhatsApp shows its own confirmation. */
     fun addToWhatsAppIntent(ctx: Context, pack: Pack) = Intent("com.whatsapp.intent.action.ENABLE_STICKER_PACK").apply {
         putExtra("sticker_pack_id", pack.id)
         putExtra("sticker_pack_authority", authority(ctx))
         putExtra("sticker_pack_name", pack.title)
-        setPackage("com.whatsapp")
+        setPackage(target(ctx))
     }
 
     fun openWhatsApp(ctx: Context): Boolean = try {
-        ctx.packageManager.getLaunchIntentForPackage("com.whatsapp")?.let {
+        ctx.packageManager.getLaunchIntentForPackage(target(ctx))?.let {
             // Without a reset flag this brings WhatsApp's existing task forward: you're back in the chat you left.
             ctx.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
         } ?: false
@@ -394,7 +428,7 @@ class StickerContentProvider : ContentProvider() {
             METADATA_SINGLE -> metadata(ctx, listOfNotNull(StickerPacks.pack(ctx, uri.lastPathSegment ?: "")))
             STICKERS -> {
                 val pack = StickerPacks.pack(ctx, uri.lastPathSegment ?: "") ?: return null
-                StickerPacks.markRead(ctx, pack)
+                StickerPacks.markRead(ctx, pack, callingPackage)
                 MatrixCursor(arrayOf("sticker_file_name", "sticker_emoji", "sticker_accessibility_text")).apply {
                     StickerPacks.entries(ctx, pack).forEach { addRow(arrayOf("${it.sha}.webp", StickerPacks.safeEmoji(it.emoji), "Sticker")) }
                     setNotificationUri(ctx.contentResolver, uri)

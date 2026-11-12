@@ -14,13 +14,18 @@ This is deliverable 11. The Project doc's status board is the live view; this fi
 
 ## Android version support
 
-minSdk is 36 for now. The checklist for lowering it lives in the Project doc under "Android version support checklist".
+Done in 1.0.0: minSdk 28 (Android 9+), arm64.
+- Newer-only APIs are version-checked in one place (`compat/Compat.kt`): WebP encode formats, all-files access vs. the storage permission (Android 9–10, with legacy storage on 10), share-intent extras, notification permission (13+), process-exit reasons (11+).
+- Long runs are foreground "media processing" on 15+, "data sync" on 10–14, untyped on 9.
+- WhatsApp's folder is found under `Android/media/…` (11+) or at the storage root (9–10); WhatsApp Business folders likewise.
+- Sending targets WhatsApp or WhatsApp Business (asked once when both are installed); pack bookkeeping is kept per app.
+- Phones under ~6 GB of memory don't describe on-device by default.
+- Lint with minSdk 28 reports no NewApi/InlinedApi issues.
 
 ## Deferred
 
 These items are tracked in the Project doc's deferred checklist:
 - sticker packs (first-party and third-party);
-- WhatsApp Business as a first-class source;
 - dual-app WhatsApp;
 - Lottie stickers;
 - Accessibility-based favourites flagging.

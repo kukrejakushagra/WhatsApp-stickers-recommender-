@@ -30,7 +30,7 @@ class Thumbnailer(private val dir: File, private val maxPx: Int = 256) {
         }
         // Unique temp name: duplicates of the same hash may be processed concurrently.
         val tmp = File.createTempFile(sha256, ".tmp", dir)
-        tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.WEBP_LOSSY, 85, it) }
+        tmp.outputStream().use { bmp.compress(com.kukreja.stickersearch.compat.Compat.webpLossy, 85, it) }
         bmp.recycle()
         if (!tmp.renameTo(out)) tmp.delete() // another worker won the race; its file is identical
         return out.absolutePath

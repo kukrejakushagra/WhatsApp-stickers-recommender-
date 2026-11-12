@@ -18,12 +18,15 @@ interface StickerSource {
     suspend fun scan(): SourceResult
 }
 
-/** Option A: plain java.io.File walk. Needs MANAGE_EXTERNAL_STORAGE ("All files access"). */
-class FileSystemSource : StickerSource {
+/**
+ * Option A: plain java.io.File walk. Needs "All files access" on Android 11+, or the storage
+ * permission on Android 9-10 (see Compat.canReadAllFiles).
+ */
+class FileSystemSource(private val context: Context) : StickerSource {
     override val id = SourceId.FILE_SYSTEM
 
     override suspend fun scan(): SourceResult {
-        if (!Environment.isExternalStorageManager()) {
+        if (!com.kukreja.stickersearch.compat.Compat.canReadAllFiles(context)) {
             return SourceResult(SourceProbe(id, false, "All files access not granted"), emptyList())
         }
         val ext = Environment.getExternalStorageDirectory()
@@ -36,7 +39,9 @@ class FileSystemSource : StickerSource {
             if (!root.exists()) { notes += "$rel: does not exist"; continue }
             if (root.listFiles() == null) { notes += "$rel: exists but not listable"; continue }
             scanned += rel
-            root.walkTopDown().onFail { f, e -> notes += "walk failed at ${f.path}: ${e.message}" }
+            root.walkTopDown()
+                .onEnter { d -> PathRules.shouldDescend(d.absolutePath.removePrefix(ext.absolutePath + "/")) }
+                .onFail { f, e -> notes += "walk failed at ${f.path}: ${e.message}" }
                 .filter { it.isFile }
                 .forEach { f ->
                     val relPath = f.absolutePath.removePrefix(ext.absolutePath + "/")
@@ -57,11 +62,30 @@ class FileSystemSource : StickerSource {
     }
 }
 
-/** Option B: Storage Access Framework tree the user picked once (persisted URI permission). */
-class SafTreeSource(private val context: Context, private val treeUri: Uri?) : StickerSource {
+/**
+ * Option B: Storage Access Framework folders the user picked once (persisted URI permission):
+ * WhatsApp's Media folder, and WhatsApp Business's when that's installed too.
+ */
+class SafTreeSource(private val context: Context, private val trees: List<Uri>) : StickerSource {
     override val id = SourceId.SAF_TREE
 
+    constructor(context: Context, treeUri: Uri?) : this(context, listOfNotNull(treeUri))
+
     override suspend fun scan(): SourceResult {
+        if (trees.size <= 1) return scanOne(trees.firstOrNull())
+        val parts = trees.map { scanOne(it) }
+        val ok = parts.filter { it.probe.accessible }
+        if (ok.isEmpty()) return parts.first()
+        val inventory = mutableMapOf<String, com.kukreja.stickersearch.model.DirStats>()
+        ok.forEach { inventory.putAll(it.inventory) }
+        return SourceResult(
+            SourceProbe(id, true, null, ok.flatMap { it.probe.rootsScanned },
+                parts.flatMap { it.probe.notes } + parts.filter { !it.probe.accessible }.map { "skipped: ${it.probe.error}" }),
+            ok.flatMap { it.files }, inventory,
+        )
+    }
+
+    private suspend fun scanOne(treeUri: Uri?): SourceResult {
         if (treeUri == null) return SourceResult(SourceProbe(id, false, "No folder picked yet"), emptyList())
         val held = context.contentResolver.persistedUriPermissions.any { it.uri == treeUri && it.isReadPermission }
         if (!held) {
@@ -113,8 +137,9 @@ class SafTreeSource(private val context: Context, private val treeUri: Uri?) : S
 
     companion object {
         /** Initial location for the SAF picker, so the user does not have to navigate. */
-        fun initialStickerFolderUri(): Uri = DocumentsContract.buildDocumentUri(
-            "com.android.externalstorage.documents", "primary:${PathRules.WHATSAPP_MEDIA_RELATIVE}",
+        fun initialStickerFolderUri(business: Boolean = false): Uri = DocumentsContract.buildDocumentUri(
+            "com.android.externalstorage.documents",
+            "primary:${PathRules.mediaFolder(business, android.os.Build.VERSION.SDK_INT)}",
         )
     }
 }

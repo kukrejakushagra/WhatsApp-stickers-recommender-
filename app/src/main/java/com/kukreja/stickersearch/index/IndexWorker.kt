@@ -45,13 +45,15 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         }
 
         setProgress(workDataOf(KEY_PHASE to "Listing files", KEY_DONE to 0, KEY_TOTAL to 0))
-        val tree = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TREE, null)?.let(Uri::parse)
-        val saf = SafTreeSource(ctx, tree).scan()
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // WhatsApp's Media folder, plus WhatsApp Business's when picked too: one library.
+        val trees = listOfNotNull(prefs.getString(KEY_TREE, null), prefs.getString(KEY_TREE_BUSINESS, null)).map(Uri::parse)
+        val saf = SafTreeSource(ctx, trees).scan()
         val results = buildList<SourceResult> {
             add(saf)
             // All-files access only stands in when the folder picker isn't granted; using both would
             // list every sticker twice under different URIs.
-            if (!saf.probe.accessible && Environment.isExternalStorageManager()) add(FileSystemSource().scan())
+            if (!saf.probe.accessible && com.kukreja.stickersearch.compat.Compat.canReadAllFiles(ctx)) add(FileSystemSource(ctx).scan())
             add(SharedInSource(File(ctx.filesDir, "imported")).scan())
         }
         val accessible = results.filter { it.probe.accessible }.map { it.probe.source.name }.toSet()
@@ -122,6 +124,7 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         const val UNIQUE = "sticker-index"
         const val PREFS = "m1"
         const val KEY_TREE = "saf_tree_uri"
+        const val KEY_TREE_BUSINESS = "saf_tree_uri_business"
         const val KEY_TRIGGER = "trigger"
         const val KEY_RETRY_FAILED = "retry_failed"
         const val KEY_PHASE = "phase"

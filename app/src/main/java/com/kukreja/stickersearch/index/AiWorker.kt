@@ -61,7 +61,8 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
         graphPass()
         if (isStopped) return Result.success()
 
-        if (models.has(ModelKind.GEMMA) && !isPaused(ctx)) {
+        // Phones with little memory don't describe on their own unless the user chose "Try anyway".
+        if (models.has(ModelKind.GEMMA) && !isPaused(ctx) && com.kukreja.stickersearch.device.DeviceCaps.describingAllowed(ctx)) {
             if (manual || isCharging(ctx)) {
                 annotatePass()
             } else {

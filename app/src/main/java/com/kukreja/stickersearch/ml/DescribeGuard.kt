@@ -79,7 +79,10 @@ object DescribeGuard {
     fun lastCrashAt(ctx: Context): Long = prefs(ctx).getLong("last_at", 0)
 
     /** Android's own record of why the app's process ended after [since]. */
+    @android.annotation.SuppressLint("NewApi") // guarded by the SDK check at the top
     fun exitReason(ctx: Context, since: Long): String {
+        // Android keeps exit reasons from Android 11; older phones just get the plain message.
+        if (android.os.Build.VERSION.SDK_INT < 30) return "the app closed unexpectedly"
         val am = ctx.getSystemService(ActivityManager::class.java) ?: return "the app closed unexpectedly"
         val info = runCatching { am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5) }.getOrNull()
             ?.firstOrNull { it.timestamp >= since - 1_000 } ?: return "the app closed unexpectedly"
@@ -99,7 +102,9 @@ object DescribeGuard {
     }
 
     /** The last few process exits, for the diagnostics report. */
+    @android.annotation.SuppressLint("NewApi") // guarded by the SDK check at the top
     fun recentExits(ctx: Context): List<String> {
+        if (android.os.Build.VERSION.SDK_INT < 30) return emptyList()
         val am = ctx.getSystemService(ActivityManager::class.java) ?: return emptyList()
         return runCatching { am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5) }.getOrDefault(emptyList()).map {
             "${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(it.timestamp))} " +
@@ -113,8 +118,9 @@ object DescribeGuard {
      * native libraries in the crashing thread's backtrace, which says which engine crashed
      * (MediaPipe's LLM library, ONNX Runtime, ...). System libraries are left out.
      */
+    @androidx.annotation.RequiresApi(30)
     private fun nativeLibs(info: ApplicationExitInfo): List<String> {
-        if (info.reason != ApplicationExitInfo.REASON_CRASH_NATIVE) return emptyList()
+        if (android.os.Build.VERSION.SDK_INT < 31 || info.reason != ApplicationExitInfo.REASON_CRASH_NATIVE) return emptyList()
         val bytes = runCatching { info.traceInputStream?.use { it.readBytes() } }.getOrNull() ?: return emptyList()
         val text = String(bytes, Charsets.ISO_8859_1)
         return Regex("""[A-Za-z0-9_\-.]+\.so""").findAll(text).map { it.value }

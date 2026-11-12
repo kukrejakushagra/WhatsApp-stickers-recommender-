@@ -76,7 +76,7 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = BottomClearance), verticalArrangement = Arrangement.spacedBy(20.dp)) {
 
             // ---- Library ----
-            KdsSettingsGroup("Sticker access", listOf(
+            KdsSettingsGroup("Sticker access", listOf<@Composable () -> Unit>(
                 {
                     KdsSettingsRow(
                         title = "WhatsApp media folder", icon = R.drawable.ic_kds_folder,
@@ -90,13 +90,27 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                         },
                     )
                 },
-                {
+            ) + (if (p.businessTree != null || com.kukreja.stickersearch.share.StickerPacks.WHATSAPP_BUSINESS in p.whatsApps) listOf<@Composable () -> Unit>({
+                KdsSettingsRow(
+                    title = "WhatsApp Business folder", icon = R.drawable.ic_kds_folder,
+                    description = if (p.businessHeld) p.businessTree?.let { android.provider.DocumentsContract.getTreeDocumentId(it) }
+                            ?.substringAfter(':')?.replace("/", " › ")
+                        else "WhatsApp Business keeps its own stickers. Pick its Media folder too, and both go into one library.",
+                    onClick = if (p.businessHeld) actions.pickBusinessFolder else null,
+                    trailing = {
+                        if (p.businessHeld) KdsBadge("Granted", BadgeTone.SOFT)
+                        else KdsButton("Pick folder", actions.pickBusinessFolder, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
+                    },
+                )
+            }) else emptyList()) + listOf<@Composable () -> Unit>({
+                    // Android 11+ calls it "All files access"; on Android 9-10 it's the storage permission.
+                    val modern = android.os.Build.VERSION.SDK_INT >= 30
                     KdsSettingsRow(
-                        title = "All files access", icon = R.drawable.ic_kds_shield,
+                        title = if (modern) "All files access" else "Storage permission", icon = R.drawable.ic_kds_shield,
                         description = "Optional. Used only when the folder isn't picked.",
                         trailing = {
                             if (p.allFiles) KdsBadge("Granted", BadgeTone.SOFT)
-                            else KdsButton("Open settings", actions.openAllFiles, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
+                            else KdsButton(if (modern) "Open settings" else "Allow", actions.openAllFiles, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
                         },
                     )
                 },
@@ -113,7 +127,20 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
 
             // ---- WhatsApp ----
             val quickReady = state.packs.filter { !it.pack.custom }.all { it.added }
-            KdsSettingsGroup("WhatsApp packs", listOf<@Composable () -> Unit>({
+            KdsSettingsGroup("WhatsApp packs", (if (p.whatsApps.size > 1) listOf<@Composable () -> Unit>({
+                KdsSettingsRow(
+                    title = "Send with", icon = R.drawable.ic_kds_phone,
+                    description = "Both WhatsApp and WhatsApp Business are installed. Stickers go to the one chosen here.",
+                    trailing = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            KdsFilterChip("WhatsApp", p.sendWith == com.kukreja.stickersearch.share.StickerPacks.WHATSAPP,
+                                { actions.setSendWith(com.kukreja.stickersearch.share.StickerPacks.WHATSAPP) })
+                            KdsFilterChip("Business", p.sendWith == com.kukreja.stickersearch.share.StickerPacks.WHATSAPP_BUSINESS,
+                                { actions.setSendWith(com.kukreja.stickersearch.share.StickerPacks.WHATSAPP_BUSINESS) })
+                        }
+                    },
+                )
+            }) else emptyList()) + listOf<@Composable () -> Unit>({
                 KdsSettingsRow(
                     title = "Refresh pack on every send", icon = R.drawable.ic_kds_refresh,
                     description = "Shows WhatsApp's pack screen before each send, which makes WhatsApp re-read the pack so the new " +
@@ -195,9 +222,9 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 {
                     KdsSettingsRow(
                         title = "Battery optimisation", icon = R.drawable.ic_kds_battery,
-                        description = if (state.batteryUnrestricted) "Unrestricted, so overnight runs aren't cut short."
-                        else "Allow unrestricted use so overnight runs finish. On Honor phones, also set Sticker Search to " +
-                            "“Manage manually” in Settings › Battery › App launch.",
+                        description = (if (state.batteryUnrestricted) "Unrestricted, so overnight runs aren't cut short. "
+                            else "Allow unrestricted use so overnight runs finish. ") +
+                            com.kukreja.stickersearch.device.DeviceCaps.batteryTip(android.os.Build.MANUFACTURER),
                         trailing = {
                             if (state.batteryUnrestricted) KdsBadge("Allowed", BadgeTone.SOFT)
                             else KdsButton("Allow", actions.openBatterySettings, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
@@ -425,6 +452,18 @@ private fun StatusPanel(state: UiState, actions: AppActions) {
             KdsCallout("Gemma couldn't start: $it. Import gemma-3n-E2B-it-int4.task again.", CalloutTone.ERROR)
         }
 
+        if (state.models.has(ModelKind.GEMMA) && !state.phoneCanDescribe) {
+            Spacer(Modifier.height(8.dp))
+            KdsCallout(
+                "This phone has %.1f GB of memory, so describing on it is likely to fail. Use \u201cDescribe on a PC\u201d below, or Share descriptions from another phone. Search by look works here either way."
+                    .format(state.memoryGb),
+                CalloutTone.NEUTRAL, title = "Describing is off on this phone",
+            )
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Try anyway", style = Kds.type.caption, color = Kds.colors.foreground, modifier = Modifier.weight(1f))
+                KdsFilterChip(if (state.describeAnyway) "On" else "Off", state.describeAnyway, { actions.setDescribeAnyway(!state.describeAnyway) })
+            }
+        }
         Spacer(Modifier.height(14.dp))
         val describing = ai.running && ai.phase == com.kukreja.stickersearch.index.AiWorker.DESCRIBE_PHASE
         val ready = ModelKind.entries.any { state.models.has(it) }

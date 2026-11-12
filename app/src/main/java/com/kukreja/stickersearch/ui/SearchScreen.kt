@@ -175,7 +175,8 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     val bottomRoom = maxOf(BottomClearance, imeBottom + 16.dp)
     Box(Modifier.fillMaxWidth().weight(1f)) {
     LazyVerticalGrid(
-        GridCells.Fixed(3), Modifier.fillMaxSize().nestedScroll(hideOnScroll), state = gridState,
+        // Three columns on phones, more on tablets and unfolded foldables.
+        GridCells.Adaptive(minSize = 96.dp), Modifier.fillMaxSize().nestedScroll(hideOnScroll), state = gridState,
         // Extra end padding while browsing keeps the fast-scroll handle off the last column.
         contentPadding = PaddingValues(start = 16.dp, end = if (browsing) 30.dp else 16.dp, bottom = bottomRoom + if (selecting) 112.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
