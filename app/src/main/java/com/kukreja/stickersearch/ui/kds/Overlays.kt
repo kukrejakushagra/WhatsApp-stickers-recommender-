@@ -95,6 +95,8 @@ fun KdsSheet(
     title: String,
     onDismiss: () -> Unit,
     subtitle: String? = null,
+    /** Pinned under the title, above the scrolling body (e.g. a playing preview). */
+    header: (@Composable ColumnScope.() -> Unit)? = null,
     footer: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -116,6 +118,7 @@ fun KdsSheet(
             .then(if (footer == null) Modifier.imePadding() else Modifier)) {
             Text(title, style = Kds.type.heading, color = c.foreground)
             subtitle?.let { Text(it, style = Kds.type.caption, color = c.mutedForeground) }
+            header?.let { Column(Modifier.fillMaxWidth().padding(top = 12.dp), content = it) }
             Column(
                 Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
                 content = content,

@@ -30,6 +30,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -128,9 +129,12 @@ internal fun StickerSheet(
         AddToPackDialog(s, state, state.search.query.trim().ifBlank { "My stickers" }, actions) { choosingPack = false }
     }
     var reload by remember { mutableIntStateOf(0) }
-    val details by produceState<StickerDetails?>(null, s.id, reload, s.status) { value = actions.details(s.id) }
-    var editing by remember { mutableStateOf(false) }
-    var showFiles by remember { mutableStateOf(false) }
+    // Switching to a related sticker keeps the previous details until the new ones arrive, so the
+    // page doesn't collapse and its scroll position stays where it was.
+    var details by remember { mutableStateOf<StickerDetails?>(null) }
+    LaunchedEffect(s.id, reload, s.status) { details = actions.details(s.id) }
+    var editing by remember(s.id) { mutableStateOf(false) }
+    var showFiles by remember(s.id) { mutableStateOf(false) }
     val a = details?.annotation
     val dims = if (s.width > 0) "${s.width}×${s.height} · " else ""
     val dur = s.durationMs?.takeIf { it > 0 }?.let { "%.1f s · ".format(it / 1000.0) } ?: ""
@@ -138,6 +142,22 @@ internal fun StickerSheet(
         title = if (editing) "Edit description" else formatName(s),
         subtitle = if (editing) "Your changes are kept when stickers are analysed again" else "$dims$dur${"%,d".format(s.sizeBytes / 1024)} KB",
         onDismiss = onDismiss,
+        // The playing preview stays pinned at the top while the rest scrolls.
+        header = if (editing) null else {
+            {
+                Box(
+                    Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(18.dp)).background(Kds.colors.glassClear),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val uri = s.primaryUri?.let(Uri::parse)
+                    when {
+                        uri == null -> KdsEmptyState(R.drawable.ic_kds_image, "File missing", "Run a scan to find it again.")
+                        s.isLottie() -> LottiePreview(uri, Modifier.fillMaxSize().padding(12.dp))
+                        else -> AnimatedPreview(uri, Modifier.fillMaxSize().padding(12.dp))
+                    }
+                }
+            }
+        },
         footer = if (editing) null else {
             {
                 // The sheet covers the app's own toasts, so messages about sending show here.
@@ -158,18 +178,6 @@ internal fun StickerSheet(
             EditForm(s.id, details, actions, onDone = { editing = false; reload++ })
             return@KdsSheet
         }
-        Box(
-            Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(18.dp)).background(Kds.colors.glassClear),
-            contentAlignment = Alignment.Center,
-        ) {
-            val uri = s.primaryUri?.let(Uri::parse)
-            when {
-                uri == null -> KdsEmptyState(R.drawable.ic_kds_image, "File missing", "Run a scan to find it again.")
-                s.isLottie() -> LottiePreview(uri, Modifier.fillMaxSize().padding(12.dp))
-                else -> AnimatedPreview(uri, Modifier.fillMaxSize().padding(12.dp))
-            }
-        }
-        Spacer(Modifier.height(12.dp))
         if (a != null) {
             Text(a.description, style = Kds.type.body, color = Kds.colors.foreground)
             if (a.text.isNotBlank()) {
@@ -280,8 +288,10 @@ private fun EditForm(id: Long, details: StickerDetails?, actions: AppActions, on
 @Composable
 internal fun AnimatedPreview(uri: Uri, modifier: Modifier) {
     val context = LocalContext.current
-    val drawable by produceState<Drawable?>(null, uri) {
-        value = withContext(Dispatchers.IO) {
+    // Keeps showing the previous sticker until this one has loaded, instead of flashing "Loading".
+    var drawable by remember { mutableStateOf<Drawable?>(null) }
+    LaunchedEffect(uri) {
+        drawable = withContext(Dispatchers.IO) {
             runCatching { ImageDecoder.decodeDrawable(ImageDecoder.createSource(context.contentResolver, uri)) }.getOrNull()
         }
     }
@@ -299,8 +309,9 @@ internal fun AnimatedPreview(uri: Uri, modifier: Modifier) {
 @Composable
 internal fun LottiePreview(uri: Uri, modifier: Modifier) {
     val context = LocalContext.current
-    val result by produceState<WasRenderer.Result?>(null, uri) {
-        value = withContext(Dispatchers.IO) {
+    var result by remember { mutableStateOf<WasRenderer.Result?>(null) }
+    LaunchedEffect(uri) {
+        result = withContext(Dispatchers.IO) {
             runCatching {
                 val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("file couldn't be opened")
                 WasRenderer.load(context, bytes)
