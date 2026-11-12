@@ -30,6 +30,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.derivedStateOf
 import com.kukreja.stickersearch.ui.kds.KdsProgress
@@ -69,9 +73,26 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     val assist = state.assist
     val ai = state.ai.counts
     val selecting = state.selecting
-    val tap: (StickerRow) -> Unit = if (selecting) { r -> actions.toggleSelected(r.id) } else onOpen
+    // The keyboard gets out of the way as soon as you're done typing: Back, the search key,
+    // scrolling, or tapping anything below hides it.
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val imeVisible = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    val imeShown by androidx.compose.runtime.rememberUpdatedState(imeVisible)
+    fun dismissKeyboard() { keyboard?.hide(); focus.clearFocus() }
+    val hideOnScroll = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (imeShown && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && available.y != 0f) {
+                    keyboard?.hide(); focus.clearFocus()
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
+    val tap: (StickerRow) -> Unit = if (selecting) { r -> actions.toggleSelected(r.id) } else { r -> dismissKeyboard(); onOpen(r) }
     // Long-press anywhere sends straight to WhatsApp (not while picking stickers for a pack).
-    val send: ((StickerRow) -> Unit)? = if (selecting) null else actions.sendViaWhatsApp
+    val send: ((StickerRow) -> Unit)? = if (selecting) null else { r -> dismissKeyboard(); actions.sendViaWhatsApp(r) }
     // An empty search box shows the whole library, newest first, with its filters.
     val browsing = s.query.isBlank() && assist.attachments.isEmpty()
     var filter by rememberSaveable { mutableStateOf(LibraryFilter.ALL) }
@@ -89,8 +110,9 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     LaunchedEffect(browsing, filter) { gridState.scrollToItem(0) }
     // Back first undoes what's on screen (selection, attached images, the search), and only then
     // leaves the app.
-    androidx.activity.compose.BackHandler(enabled = selecting || assist.attachments.isNotEmpty() || s.query.isNotEmpty()) {
+    androidx.activity.compose.BackHandler(enabled = imeVisible || selecting || assist.attachments.isNotEmpty() || s.query.isNotEmpty()) {
         when {
+            imeVisible -> dismissKeyboard()  // first Back: just put the keyboard away; the results stay
             selecting -> actions.stopSelecting()
             assist.attachments.isNotEmpty() -> actions.clearAssist()
             else -> actions.onQueryChange("")
@@ -110,7 +132,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KdsSearchField(
                 value = s.query, onValueChange = actions.onQueryChange,
-                onSearch = { if (assist.attachments.isNotEmpty()) actions.runAssist() else actions.submitSearch() },
+                onSearch = { if (assist.attachments.isNotEmpty()) actions.runAssist() else actions.submitSearch(); dismissKeyboard() },
                 placeholder = if (assist.attachments.isEmpty()) "Search %,d stickers".format(all.size).takeIf { all.isNotEmpty() } ?: "Describe what you want to say"
                     else "Add what you want to say (optional)",
                 modifier = Modifier.weight(1f),
@@ -148,11 +170,14 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         Spacer(Modifier.height(8.dp))
     }
     if (scrolled) androidx.compose.material3.HorizontalDivider(thickness = 1.dp, color = Kds.colors.border)
+    // Below the keyboard, nothing is lost: the grid's end padding grows to the keyboard's height.
+    val imeBottom = androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val bottomRoom = maxOf(BottomClearance, imeBottom + 16.dp)
     Box(Modifier.fillMaxWidth().weight(1f)) {
     LazyVerticalGrid(
-        GridCells.Fixed(3), Modifier.fillMaxSize(), state = gridState,
+        GridCells.Fixed(3), Modifier.fillMaxSize().nestedScroll(hideOnScroll), state = gridState,
         // Extra end padding while browsing keeps the fast-scroll handle off the last column.
-        contentPadding = PaddingValues(start = 16.dp, end = if (browsing) 30.dp else 16.dp, bottom = BottomClearance + if (selecting) 112.dp else 0.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = if (browsing) 30.dp else 16.dp, bottom = bottomRoom + if (selecting) 112.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // ---- Scrolls away: everything else above the stickers ----
@@ -196,7 +221,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             KdsIcon(R.drawable.ic_kds_history, 14.dp)
                             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                s.recent.forEach { q -> KdsFilterChip(q, false, { actions.useRecent(q) }) }
+                                s.recent.forEach { q -> KdsFilterChip(q, false, { dismissKeyboard(); actions.useRecent(q) }) }
                             }
                             KdsButton("Clear", actions.clearRecent, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
                         }
@@ -204,7 +229,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("TRY", style = Kds.type.overline, color = Kds.colors.mutedForeground)
                             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                EXAMPLES.forEach { q -> KdsFilterChip(q, false, { actions.useRecent(q) }) }
+                                EXAMPLES.forEach { q -> KdsFilterChip(q, false, { dismissKeyboard(); actions.useRecent(q) }) }
                             }
                         }
                     }
@@ -262,7 +287,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
         // Item 0 is the header; items 1.. are stickers, newest first, so the bubble shows their month.
         KdsFastScroller(
             gridState, itemCount = library.size + 1, modifier = Modifier.align(Alignment.TopEnd),
-            topInset = 4.dp, bottomInset = BottomClearance,
+            topInset = 4.dp, bottomInset = bottomRoom,
             label = { i -> library.getOrNull(i - 1)?.newest?.takeIf { it > 0 }?.let { monthFmt.format(java.util.Date(it)) } },
         )
     }
@@ -272,7 +297,7 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
             onTop = { actions.selectTop(visible.map { it.id }) },
             onCancel = actions.stopSelecting,
             onCreate = { naming = true },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = BottomClearance - 8.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = bottomRoom - 8.dp),
         )
     }
     }

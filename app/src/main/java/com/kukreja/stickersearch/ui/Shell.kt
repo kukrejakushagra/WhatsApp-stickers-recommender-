@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -195,6 +197,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
 
 private enum class Tab { SEARCH, SETTINGS }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchOpened: () -> Unit = {}) {
     // First launch without any stickers opens Settings, where access is granted.
@@ -218,17 +221,21 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
                 Tab.SETTINGS -> SettingsScreen(state, actions)
             }
         }
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        // While the keyboard is up, the tab bar steps aside (it would sit right on top of the keyboard)
+        // and messages move up above it.
+        val imeVisible = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             KdsToastHost(state.message, actions.messageShown, Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp))
             val busy = (state.index.running && state.index.total > 0) || state.ai.running
-            KdsBottomNav(
+            if (!imeVisible) KdsBottomNav(
                 items = listOf(
                     NavItem("Stickers", R.drawable.ic_kds_search),
                     NavItem("Settings", R.drawable.ic_kds_sliders, count = if (busy) (state.ai.total - state.ai.done).takeIf { it > 0 }
                         ?: (state.index.total - state.index.done).takeIf { it > 0 } else null),
                 ),
                 selected = tab,
-                onSelect = { if (it != tab && state.selecting) actions.stopSelecting(); tab = it },
+                onSelect = { if (it != tab && state.selecting) actions.stopSelecting(); keyboard?.hide(); tab = it },
                 modifier = Modifier.navigationBarsPadding(),
             )
         }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -111,7 +112,8 @@ fun KdsSheet(
         },
     ) {
         // Header and footer stay put; only the body scrolls, so the footer's actions are always on screen.
-        Column(Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 20.dp)) {
+        Column(Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 20.dp)
+            .then(if (footer == null) Modifier.imePadding() else Modifier)) {
             Text(title, style = Kds.type.heading, color = c.foreground)
             subtitle?.let { Text(it, style = Kds.type.caption, color = c.mutedForeground) }
             Column(
@@ -122,7 +124,8 @@ fun KdsSheet(
         if (footer != null) {
             HorizontalDivider(thickness = 1.dp, color = c.border)
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).navigationBarsPadding(),
+                // The keyboard (editing a description) pushes the buttons and the body up instead of covering them.
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).navigationBarsPadding().imePadding(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 content = footer,
             )
