@@ -11,9 +11,12 @@ Secrets come from environment variables and are never printed or written into th
   UPLOAD_KEY_ALIAS                   optional, default "upload"
 
 Commands (several can be given; they go into one edit, committed once at the end):
-  listing            title, short and full description from docs/store/listing.json
+  listing            title, short and full description, one language per docs/store/listing*.json
+  details            contact website from docs/store/details.json; --contact-email sets the public
+                     contact email (otherwise it's left as set in the Console)
   images             icon, feature graphic and phone screenshots from docs/store/
-  upload [--track T] build a signed bundle and release it to a track (default: internal)
+  upload [--track T] build a signed bundle and release it to a track (default: internal), with the
+                     "What's new" notes for its versionCode from docs/store/release-notes.json
   show               print the live listing (read-only)
 
   --dry-run          prepare everything and validate the edit, but don't commit it
@@ -106,7 +109,23 @@ class Play:
 
 
 def do_listing(play: Play):
-    d = json.loads((STORE / "listing.json").read_text())
+    for f in sorted(STORE.glob("listing*.json")):
+        put_listing(play, json.loads(f.read_text()))
+
+
+def do_details(play: Play, contact_email=None):
+    d = json.loads((STORE / "details.json").read_text())
+    body = {k: v for k, v in d.items() if k in ("contactWebsite", "defaultLanguage") and v}
+    if contact_email:  # passed on the command line, so no address is stored in the repo
+        body["contactEmail"] = contact_email
+    # Read what's there and write it back with only these fields changed, so the contact email and
+    # phone stay exactly as set in the Console.
+    current = play.call("GET", play.e("/details"))
+    play.call("PUT", play.e("/details"), body={**current, **body})
+    print("  details: " + ", ".join(f"{k} = {v}" for k, v in body.items()))
+
+
+def put_listing(play: Play, d):
     lang = d["language"]
     try:
         old = play.call("GET", play.e(f"/listings/{lang}"))
@@ -160,16 +179,20 @@ def do_upload(play: Play, track: str, tmp: pathlib.Path):
     r = play.call("POST", play.u("/bundles?uploadType=media"), data=aab.read_bytes(), content_type="application/octet-stream")
     code = r["versionCode"]
     print(f"  bundle uploaded: versionCode {code}")
-    play.call("PUT", play.e(f"/tracks/{track}"), body={
-        "track": track, "releases": [{"versionCodes": [str(code)], "status": "completed"}],
-    })
-    print(f"  release on track '{track}': versionCode {code}")
+    release = {"versionCodes": [str(code)], "status": "completed"}
+    notes_file = STORE / "release-notes.json"
+    notes = json.loads(notes_file.read_text()).get(str(code), {}) if notes_file.exists() else {}
+    if notes:
+        release["releaseNotes"] = [{"language": l, "text": t} for l, t in notes.items()]
+    play.call("PUT", play.e(f"/tracks/{track}"), body={"track": track, "releases": [release]})
+    print(f"  release on track '{track}': versionCode {code}" + (f", notes in {', '.join(notes)}" if notes else ""))
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("commands", nargs="+", choices=["listing", "images", "upload", "show"])
+    ap.add_argument("commands", nargs="+", choices=["listing", "details", "images", "upload", "show"])
     ap.add_argument("--track", default="internal")
+    ap.add_argument("--contact-email", help="public contact email for the listing (details)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     sa = service_account()
@@ -180,10 +203,16 @@ def main():
         if args.commands == ["show"]:
             for l in play.call("GET", play.e("/listings")).get("listings", []):
                 print(json.dumps({k: l.get(k) for k in ("language", "title", "shortDescription")}, ensure_ascii=False))
+            d = play.call("GET", play.e("/details"))
+            print(json.dumps({"defaultLanguage": d.get("defaultLanguage"), "contactWebsite": d.get("contactWebsite")}))
+            for t in play.call("GET", play.e("/tracks")).get("tracks", []):
+                rel = [(r.get("versionCodes"), r.get("status"), [n["language"] for n in r.get("releaseNotes", [])]) for r in t.get("releases", [])]
+                print(json.dumps({"track": t["track"], "releases": rel}))
             play.call("DELETE", play.e())
             return
         for c in args.commands:
             if c == "listing": do_listing(play)
+            elif c == "details": do_details(play, args.contact_email)
             elif c == "images": do_images(play)
             elif c == "upload": do_upload(play, args.track, tmp)
         play.call("POST", play.e(":validate"))

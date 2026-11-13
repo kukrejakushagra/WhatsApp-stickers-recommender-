@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -18,8 +19,8 @@ import app.stickersearch.ui.kds.theme.Kds
 import app.stickersearch.ui.kds.theme.KdsColors
 
 /**
- * The colour field every glass surface sits on: background, three soft blobs and a 14dp dot grid.
- * Static, drawn once per size.
+ * The surface every glass panel sits on: the plain background with one soft brand glow at the top,
+ * behind the search bar ("top glow"). Static, drawn once per size.
  */
 @Composable
 fun KdsGround(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
@@ -30,23 +31,16 @@ fun KdsGround(modifier: Modifier = Modifier, content: @Composable BoxScope.() ->
             .drawBehind {
                 val w = size.width
                 val h = size.height
-                fun blob(color: Color, cx: Float, cy: Float, r: Float) = drawCircle(
-                    Brush.radialGradient(listOf(color, color.copy(alpha = 0f)), center = Offset(cx, cy), radius = r),
-                    radius = r, center = Offset(cx, cy),
+                // An ellipse 120% of the width across and 34% of the height down, centred on the top
+                // edge: a circular gradient squashed vertically.
+                val rx = w * 1.2f
+                val ry = h * 0.34f
+                val glow = Brush.radialGradient(
+                    0f to c.brand.copy(alpha = 0.34f), 0.78f to c.brand.copy(alpha = 0f),
+                    center = Offset(w / 2f, 0f), radius = rx,
                 )
-                blob(c.field1, w * 0.12f, h * 0.10f, w * 0.85f)
-                blob(c.field2, w * 0.95f, h * 0.38f, w * 0.75f)
-                blob(c.field3, w * 0.30f, h * 0.92f, w * 0.80f)
-                val step = 14.dp.toPx()
-                val dot = 1.dp.toPx()
-                var y = step / 2
-                while (y < h) {
-                    var x = step / 2
-                    while (x < w) {
-                        drawCircle(c.fieldDot, radius = dot, center = Offset(x, y))
-                        x += step
-                    }
-                    y += step
+                scale(scaleX = 1f, scaleY = ry / rx, pivot = Offset(w / 2f, 0f)) {
+                    drawRect(glow, topLeft = Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(w, rx))
                 }
             },
         content = content,

@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Search glyph from the app's outline icon set, scaled into the adaptive-icon safe zone. -->
+<!-- A white die-cut sticker with a peeled corner, a magnifier and an AI sparkle. Kept inside the
+     adaptive-icon safe zone (66dp circle). Same geometry as the Play Store icon (docs/store/icon.png). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <group android:translateX="33" android:translateY="33" android:scaleX="1.75" android:scaleY="1.75">
-        <path android:pathData="M3,11a8,8 0 1 0 16,0a8,8 0 1 0 -16,0z"
-            android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round"
-            android:strokeLineJoin="round" android:fillColor="#00000000" />
-        <path android:pathData="m21 21-4.3-4.3"
-            android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round"
-            android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="1.18" android:scaleY="1.18">
+        <path android:pathData="M42,34H66A10,10 0,0 1,76 44V64L62,78H42A10,10 0,0 1,32 68V44A10,10 0,0 1,42 34Z"
+            android:fillColor="#FF000000" android:fillAlpha="0.18" />
+        <path android:pathData="M42,32H66A10,10 0,0 1,76 42V62L62,76H42A10,10 0,0 1,32 66V42A10,10 0,0 1,42 32Z"
+            android:fillColor="#FFFFFFFF" />
+        <path android:pathData="M76,62L62,76L61,61Z" android:fillColor="#FF000000" android:fillAlpha="0.10" />
+        <path android:pathData="M76,62L62,76C62.5,70 63,66 64.5,64.5C66,63 70,62.5 76,62Z" android:fillColor="#FFCDEDE8" />
+        <path android:pathData="M41.5,50.5a9,9 0,1 0,18 0a9,9 0,1 0,-18 0"
+            android:strokeColor="#FF0B7A6F" android:strokeWidth="4.5" android:fillColor="#00000000" />
+        <path android:pathData="M57.3,57.3L62.5,62.5"
+            android:strokeColor="#FF0B7A6F" android:strokeWidth="4.5" android:strokeLineCap="round" />
+        <path android:pathData="M65,35.5C65.6,39.2 66.8,40.4 70.5,41C66.8,41.6 65.6,42.8 65,46.5C64.4,42.8 63.2,41.6 59.5,41C63.2,40.4 64.4,39.2 65,35.5Z"
+            android:fillColor="#FFF6AE31" />
     </group>
 </vector>
