@@ -16,8 +16,8 @@ android {
         // Android 9+ (API 28): the system decodes animated WebP from there. Newer APIs are version-checked (see compat/).
         minSdk = 28
         targetSdk = 36
-        versionCode = 46
-        versionName = "1.1.3"
+        versionCode = 47
+        versionName = "1.1.4"
         ndk {
             // 64-bit ARM: nearly every phone since ~2017; other ABIs would add ~100 MB of native ML libraries.
             abiFilters += "arm64-v8a"

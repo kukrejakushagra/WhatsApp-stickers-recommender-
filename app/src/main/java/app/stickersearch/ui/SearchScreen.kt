@@ -209,11 +209,19 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                         KdsEmptyState(R.drawable.ic_kds_folder, "No stickers yet",
                             "Pick WhatsApp's Media folder in Settings and run a scan.", actionLabel = "Go to settings", onAction = goToSettings)
                     }
-                    !state.models.searchReady -> KdsCallout(
-                        if (state.models.downloading) "The search models are downloading (${state.models.downloadText ?: "starting"}). Until they're in, only stickers you've described are found."
-                        else "Download the search models in Settings (about 500 MB, free, no sign-in) to search by meaning and by look. Until then, only stickers you've described are found.",
-                        CalloutTone.BRAND, title = if (state.models.downloading) "Getting search ready" else "Search needs its models",
-                    )
+                    !state.models.searchReady -> {
+                        val m = state.models
+                        KdsCallout(
+                            if (m.anyDownloadActive) "Downloading the search models (%,d of %,d MB). Until they're in, only stickers you've described are found."
+                                .format(m.searchDone shr 20, m.searchTotal shr 20)
+                            else "Download the search models (about 500 MB, free, no sign-in) to search by meaning and by look. Until then, only stickers you've described are found.",
+                            CalloutTone.BRAND, title = if (m.anyDownloadActive) "Getting search ready" else "Search needs its models",
+                        )
+                        if (!m.anyDownloadActive) {
+                            KdsButton("Go to downloads", { actions.openSettingsAt("models") }, size = ButtonSize.SM,
+                                icon = R.drawable.ic_kds_download, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                        }
+                    }
                 }
                 if (assist.attachments.isNotEmpty()) {
                     AssistHeader(assist, actions, selecting)

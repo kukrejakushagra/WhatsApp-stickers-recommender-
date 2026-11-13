@@ -75,20 +75,24 @@ object IndexNotification {
         }
     }
 
-    /** Model downloads: their own notification (so a scan can run beside them), always "data sync". */
-    const val DOWNLOAD_ID = 4202
+    /** Model downloads: one notification per model (so a scan can run beside them), always "data sync". */
+    const val DOWNLOAD_ID = 4210
 
-    fun downloadInfo(ctx: Context, done: Int, total: Int, text: String): ForegroundInfo {
+    fun downloadInfo(ctx: Context, slot: Int, done: Int, total: Int, text: String): ForegroundInfo {
         val n = build(ctx, done, total, "Downloading search models", TARGET_STATUS, text)
-        return if (android.os.Build.VERSION.SDK_INT >= 29) ForegroundInfo(DOWNLOAD_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        else ForegroundInfo(DOWNLOAD_ID, n)
+        return if (android.os.Build.VERSION.SDK_INT >= 29) ForegroundInfo(DOWNLOAD_ID + slot, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        else ForegroundInfo(DOWNLOAD_ID + slot, n)
     }
 
-    fun updateDownload(ctx: Context, done: Int, total: Int, text: String) {
+    fun updateDownload(ctx: Context, slot: Int, done: Int, total: Int, text: String) {
         runCatching {
             ctx.getSystemService(NotificationManager::class.java)
-                .notify(DOWNLOAD_ID, build(ctx, done, total, "Downloading search models", TARGET_STATUS, text))
+                .notify(DOWNLOAD_ID + slot, build(ctx, done, total, "Downloading search models", TARGET_STATUS, text))
         }
+    }
+
+    fun cancelDownload(ctx: Context, slot: Int) {
+        runCatching { ctx.getSystemService(NotificationManager::class.java).cancel(DOWNLOAD_ID + slot) }
     }
 
     fun update(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers", target: String = TARGET_STATUS) {

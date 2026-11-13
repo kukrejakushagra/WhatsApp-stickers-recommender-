@@ -143,44 +143,23 @@ private fun Folder(state: UiState, actions: AppActions) {
 @Composable
 private fun Models(state: UiState, actions: AppActions) {
     val m = state.models
-    // Start at once: the user chose this by tapping Continue on a screen that says what's downloaded.
-    LaunchedEffect(Unit) { if (!m.searchModelsReady && !m.downloading && m.downloadError == null) actions.downloadModels() }
     StepTitle("Step 2 of 3", "Get the search models",
-        "Two free AI models (about 500 MB, no sign-in) let you search by meaning and by look. They download from Hugging Face; " +
-            "nothing is uploaded. You can carry on while they finish.")
+        "Three free AI models (about 500 MB, no sign-in) let you search by meaning and by look. Tap Download when you're " +
+            "ready: on Wi-Fi, or now on mobile data. They come from Hugging Face; nothing is uploaded.")
+    DownloadAllBar(m, actions)
+    Spacer(Modifier.height(16.dp))
     val search = listOf(ModelKind.E5 to "Meaning search", ModelKind.SIGLIP_VISION to "Image search, pictures", ModelKind.SIGLIP_TEXT to "Image search, words")
     KdsSettingsGroup(if (m.searchModelsReady) "Search models · ready" else "Search models", search.map { (kind, label) ->
         {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(label, style = Kds.type.bodyStrong, color = Kds.colors.foreground, modifier = Modifier.weight(1f))
-                    when {
-                        m.has(kind) -> KdsBadge("Ready", BadgeTone.SOFT)
-                        m.downloadKind == kind -> Text(m.downloadText.orEmpty(), style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = Kds.colors.mutedForeground)
-                        m.downloading -> KdsBadge("Waiting", BadgeTone.SECONDARY)
-                        else -> Text("about ${kind.approxMb} MB", style = Kds.type.caption, color = Kds.colors.mutedForeground)
-                    }
+                    if (m.has(kind)) KdsBadge("Ready", BadgeTone.SOFT)
                 }
-                if (m.downloadKind == kind && !m.has(kind)) KdsProgress(m.downloadFraction)
+                if (!m.has(kind)) ModelDownloadControls(kind, m, actions)
             }
         }
     })
-    if (m.downloading && m.downloadKind == null && !m.searchModelsReady) {
-        Spacer(Modifier.height(8.dp))
-        Text(m.downloadText ?: "Starting", style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(horizontal = 4.dp))
-    }
-    m.downloadError?.let {
-        Spacer(Modifier.height(10.dp))
-        KdsCallout("$it Check the connection and try again; what already arrived is kept.", CalloutTone.ERROR)
-        Spacer(Modifier.height(8.dp))
-        KdsButton("Try again", actions.downloadModels, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM, icon = R.drawable.ic_kds_download)
-    }
-    Spacer(Modifier.height(10.dp))
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        KdsInfo("Wi-Fi only", "Waits for Wi-Fi so mobile data isn't used. Turn off to download on mobile data now.",
-            style = Kds.type.caption, color = Kds.colors.foreground, modifier = Modifier.weight(1f))
-        KdsFilterChip(if (m.wifiOnly) "On" else "Off", m.wifiOnly, { actions.setWifiOnly(!m.wifiOnly) })
-    }
     Spacer(Modifier.height(16.dp))
     // The scan runs meanwhile.
     KdsPanel {
@@ -197,11 +176,13 @@ private fun Models(state: UiState, actions: AppActions) {
         }
     }
     Spacer(Modifier.height(32.dp))
-    KdsButton("Continue", { actions.setSetupStep(SetupStep.DESCRIBE) }, size = ButtonSize.XL, block = true,
+    val leave = { if (!m.searchModelsReady) actions.notice("Download the search models any time in Settings \u203a AI models."); actions.setSetupStep(SetupStep.DESCRIBE) }
+    KdsButton("Continue", leave, size = ButtonSize.XL, block = true,
         variant = if (m.searchModelsReady) ButtonVariant.PRIMARY else ButtonVariant.OUTLINE)
     if (!m.searchModelsReady) {
         Spacer(Modifier.height(6.dp))
-        Text("The download carries on in the background; the notification shows how far it is.",
+        Text(if (m.anyDownloadActive) "Downloads carry on in the background; the notification shows how far they are."
+            else "You can download them later from Settings \u203a AI models.",
             style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(horizontal = 4.dp))
     }
 }

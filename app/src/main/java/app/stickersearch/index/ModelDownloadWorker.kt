@@ -25,74 +25,82 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 
 /**
- * Downloads the search models (multilingual-e5 and SigLIP2, about 500 MB, no sign-in needed) from
- * Hugging Face, the only thing the app ever uses the internet for. Resumes where it stopped (a
- * `.part` file plus an HTTP Range request), waits for Wi-Fi unless the user allowed mobile data,
- * and checks each file is the right model before using it. Gemma is never downloaded here.
+ * Downloads one search model (multilingual-e5 or one half of SigLIP2; no sign-in needed) from
+ * Hugging Face, the only thing the app ever uses the internet for. Each model is its own job, so it
+ * can be started, paused and resumed on its own; it only starts when the user taps Download. Resumes
+ * where it stopped (a `.part` file plus an HTTP Range request), waits for Wi-Fi unless the user
+ * allowed mobile data, and checks the file is the right model before using it. Gemma is never
+ * downloaded here.
  */
 class ModelDownloadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
+    private val kind get() = inputData.getString(KEY_KIND)?.let { runCatching { ModelKind.valueOf(it) }.getOrNull() }
+
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val ctx = applicationContext
+        val kind = kind ?: return@withContext Result.failure(workDataOf(KEY_ERROR to "Unknown model."))
         val store = ModelStore(ctx)
         val events = EventLog(File(ctx.filesDir, "events.jsonl"))
-        val todo = store.autoDownload.filterNot { store.has(it) }
-        if (todo.isEmpty()) return@withContext Result.success()
-        val totalMb = todo.sumOf { it.approxMb }
-        runCatching { setForeground(IndexNotification.downloadInfo(ctx, 0, totalMb, "Starting")) }
-        var doneMbBefore = 0
-        for (kind in todo) {
-            val part = store.partFile(kind)
-            try {
-                fetch(kind.downloadUrl, part) { have, size ->
-                    val mb = doneMbBefore + (have shr 20).toInt()
-                    val text = "%s · %,d of %,d MB".format(kind.title, mb, totalMb)
-                    setProgress(workDataOf(KEY_KIND to kind.name, KEY_DONE_MB to mb, KEY_TOTAL_MB to totalMb,
-                        KEY_FILE_DONE to have, KEY_FILE_TOTAL to size))
-                    IndexNotification.updateDownload(ctx, mb, totalMb, text)
-                }
-            } catch (e: IOException) {
-                events.add("model_download", mapOf("model" to kind.name, "error" to "${e.javaClass.simpleName}: ${e.message}"))
-                // Network trouble: try again later; the .part file keeps what arrived.
-                return@withContext if (runAttemptCount < MAX_ATTEMPTS) Result.retry()
-                else Result.failure(workDataOf(KEY_ERROR to (e.message ?: "network error")))
+        if (store.has(kind)) return@withContext Result.success()
+        runCatching { setForeground(IndexNotification.downloadInfo(ctx, kind.ordinal, 0, kind.approxMb, "${kind.title} · starting")) }
+        val part = store.partFile(kind)
+        try {
+            fetch(kind.downloadUrl, part) { have, size ->
+                if (size > 0) savedTotal(ctx, kind, size)
+                val total = if (size > 0) size else kind.approxMb.toLong() shl 20
+                setProgress(workDataOf(KEY_DONE to have, KEY_TOTAL to total))
+                IndexNotification.updateDownload(ctx, kind.ordinal, (have shr 20).toInt(), (total shr 20).toInt(),
+                    "%s · %,d of %,d MB".format(kind.title, have shr 20, total shr 20))
             }
-            if (!store.installDownloaded(kind, part)) {
-                events.add("model_download", mapOf("model" to kind.name, "error" to "not the expected model"))
-                return@withContext Result.failure(workDataOf(KEY_ERROR to "${kind.title} didn't download correctly. Try again."))
-            }
-            events.add("model_download", mapOf("model" to kind.name, "bytes" to store.sizeBytes(kind)))
-            doneMbBefore += kind.approxMb
+        } catch (e: IOException) {
+            events.add("model_download", mapOf("model" to kind.name, "error" to "${e.javaClass.simpleName}: ${e.message}"))
+            // Network trouble: try again later; the .part file keeps what arrived.
+            return@withContext if (runAttemptCount < MAX_ATTEMPTS) Result.retry()
+            else Result.failure(workDataOf(KEY_ERROR to "The download kept failing (${e.message ?: "network error"})."))
         }
-        AiWorker.enqueue(ctx, manual = false)
+        if (!store.installDownloaded(kind, part)) {
+            events.add("model_download", mapOf("model" to kind.name, "error" to "not the expected model"))
+            return@withContext Result.failure(workDataOf(KEY_ERROR to "${kind.title} didn't download correctly."))
+        }
+        events.add("model_download", mapOf("model" to kind.name, "bytes" to store.sizeBytes(kind)))
+        if (store.autoDownload.all { store.has(it) }) AiWorker.enqueue(ctx, manual = false)
         Result.success()
     }
 
-    override suspend fun getForegroundInfo() = IndexNotification.downloadInfo(applicationContext, 0, 0, "Starting")
+    override suspend fun getForegroundInfo() =
+        IndexNotification.downloadInfo(applicationContext, kind?.ordinal ?: 0, 0, 0, "${kind?.title ?: "Model"} · starting")
 
     companion object {
-        const val UNIQUE = "model-download"
         const val KEY_KIND = "kind"
-        const val KEY_DONE_MB = "doneMb"
-        const val KEY_TOTAL_MB = "totalMb"
-        const val KEY_FILE_DONE = "fileDone"
-        const val KEY_FILE_TOTAL = "fileTotal"
+        const val KEY_DONE = "done"
+        const val KEY_TOTAL = "total"
         const val KEY_ERROR = "error"
         private const val MAX_ATTEMPTS = 8
 
-        /** [wifiOnly]: wait for an unmetered network (the default). */
-        fun enqueue(ctx: Context, wifiOnly: Boolean) {
+        fun unique(kind: ModelKind) = "model-download-${kind.name}"
+
+        /** Download, Resume and Retry: starts (or restarts) this model's job; what already arrived is kept. */
+        fun enqueue(ctx: Context, kind: ModelKind, wifiOnly: Boolean) {
             val req = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
+                .setInputData(workDataOf(KEY_KIND to kind.name))
                 .setConstraints(Constraints.Builder()
                     .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
                     .setRequiresStorageNotLow(true).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
-            // REPLACE, so switching Wi-Fi only on or off takes effect at once (the .part file is kept).
-            WorkManager.getInstance(ctx).enqueueUniqueWork(UNIQUE, ExistingWorkPolicy.REPLACE, req)
+            WorkManager.getInstance(ctx).enqueueUniqueWork(unique(kind), ExistingWorkPolicy.REPLACE, req)
         }
 
-        fun cancel(ctx: Context) = WorkManager.getInstance(ctx).cancelUniqueWork(UNIQUE)
+        /** Pause: stops the job; the .part file stays for Resume. */
+        fun pause(ctx: Context, kind: ModelKind) {
+            WorkManager.getInstance(ctx).cancelUniqueWork(unique(kind))
+            IndexNotification.cancelDownload(ctx, kind.ordinal)
+        }
+
+        private fun prefs(ctx: Context) = ctx.getSharedPreferences("model_downloads", Context.MODE_PRIVATE)
+        fun savedTotal(ctx: Context, kind: ModelKind, bytes: Long) = prefs(ctx).edit().putLong(kind.name, bytes).apply()
+        /** The full size seen on an earlier attempt, or the approximate size before the first. */
+        fun total(ctx: Context, kind: ModelKind) = prefs(ctx).getLong(kind.name, kind.approxMb.toLong() shl 20)
 
         /**
          * Downloads [url] into [part], continuing from what's already there. Calls [progress] with

@@ -97,8 +97,10 @@ data class AppActions(
     val settingsOpened: () -> Unit = {},
     val readdPack: (app.stickersearch.share.StickerPacks.Pack) -> Unit = {},
     // Model downloads and the first-run setup
-    val downloadModels: () -> Unit = {},
-    val cancelModelDownload: () -> Unit = {},
+    val downloadModel: (app.stickersearch.ml.ModelKind) -> Unit = {},
+    val pauseModel: (app.stickersearch.ml.ModelKind) -> Unit = {},
+    val downloadAll: () -> Unit = {},
+    val pauseAll: () -> Unit = {},
     val setWifiOnly: (Boolean) -> Unit = {},
     val setSetupStep: (Int) -> Unit = {},
     val finishSetup: () -> Unit = {},
@@ -109,6 +111,8 @@ data class AppActions(
     val openSettingsAt: (String) -> Unit = {},
     /** App info, where the app's battery page (Unrestricted) is. */
     val openAppSettings: () -> Unit = {},
+    /** A short message at the bottom of the screen. */
+    val notice: (String) -> Unit = {},
 )
 
 @Composable
@@ -210,8 +214,10 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             },
             setUpQuickSend = { vm.setUpQuickSend { intent -> addPack.launch(intent) } },
             readdPack = { pack -> vm.readdPack(pack) { intent -> addPack.launch(intent) } },
-            downloadModels = { askNotifications(); vm.downloadModels() },
-            cancelModelDownload = vm::cancelModelDownload,
+            downloadModel = { k -> askNotifications(); vm.downloadModel(k) },
+            pauseModel = vm::pauseModel,
+            downloadAll = { askNotifications(); vm.downloadAll() },
+            pauseAll = vm::pauseAll,
             setWifiOnly = vm::setWifiOnly,
             setSetupStep = vm::setSetupStep,
             finishSetup = { vm.finishSetup() },
@@ -220,6 +226,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             reopenSetup = vm::reopenSetup,
             openSettingsAt = vm::openSettingsAt,
             openAppSettings = { app.stickersearch.device.BatteryAccess.openAppSettings(context) },
+            notice = vm::notice,
         )
     }
     AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)

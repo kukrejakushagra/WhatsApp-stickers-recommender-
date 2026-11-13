@@ -406,21 +406,11 @@ private fun ModelsGroup(state: UiState, actions: AppActions, onRemove: (ModelKin
             }))
             return@Column
         }
+        DownloadAllBar(m, actions)
         KdsSettingsGroup(
             if (ready == ModelKind.entries.size) "AI models · all ready" else "AI models · $ready of ${ModelKind.entries.size} ready",
             ModelKind.entries.mapIndexed { i, kind -> { ModelRow(i + 1, kind, state, actions, onRemove) } },
         )
-        if (!m.searchModelsReady) {
-            // The three search models download in the app; Gemma is the only manual one.
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                KdsInfo("Wi-Fi only", "Downloads wait for Wi-Fi so mobile data isn't used. Turn off to download on mobile data now.",
-                    style = Kds.type.caption, color = Kds.colors.foreground, modifier = Modifier.weight(1f))
-                KdsFilterChip(if (m.wifiOnly) "On" else "Off", m.wifiOnly, { actions.setWifiOnly(!m.wifiOnly) })
-            }
-            m.downloadError?.let { KdsCallout("$it What already arrived is kept; tap Download to carry on.", CalloutTone.ERROR) }
-            if (m.downloading) KdsButton("Stop downloading", actions.cancelModelDownload, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
-            else KdsButton("Download all search models (about 500 MB)", actions.downloadModels, size = ButtonSize.SM, icon = R.drawable.ic_kds_download)
-        }
         if (ready < ModelKind.entries.size) {
             KdsInfo(
                 "Where's a sign-in needed?",
@@ -442,7 +432,6 @@ private fun ModelRow(step: Int, kind: ModelKind, state: UiState, actions: AppAct
     val ready = m.has(kind)
     val importingThis = m.importing != null && m.importingKind == kind
     val auto = kind != ModelKind.GEMMA
-    val downloadingThis = m.downloading && m.downloadKind == kind
     Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         // Step marker: a number while it's still to do, a tick once it's here.
         Box(
@@ -458,20 +447,16 @@ private fun ModelRow(step: Int, kind: ModelKind, state: UiState, actions: AppAct
                     modifier = Modifier.weight(1f, fill = false))
                 when {
                     ready -> KdsBadge("Ready", BadgeTone.SOFT)
-                    downloadingThis -> {}
-                    m.downloading && auto -> KdsBadge("Waiting", BadgeTone.SECONDARY)
                     kind == ModelKind.GEMMA -> KdsBadge("Sign-in needed", BadgeTone.WARNING)
+                    m.dl(kind).status == app.stickersearch.index.DlStatus.PAUSED -> KdsBadge("Paused", BadgeTone.SECONDARY)
+                    m.dl(kind).active -> KdsBadge("Downloading", BadgeTone.SECONDARY)
                     else -> KdsBadge("Not downloaded", BadgeTone.SECONDARY)
                 }
             }
             val size = if (kind.approxMb >= 1000) "%.1f GB".format(kind.approxMb / 1000.0) else "${kind.approxMb} MB"
             when {
                 ready -> KdsButton("Remove", { onRemove(kind) }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
-                downloadingThis -> {
-                    Text("Downloading · ${m.downloadText.orEmpty()}", style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = c.foreground)
-                    KdsProgress(m.downloadFraction)
-                }
-                auto -> Text("About $size · free, no sign-in · downloads in the app", style = Kds.type.caption, color = c.mutedForeground)
+                auto -> ModelDownloadControls(kind, m, actions)
                 else -> {
                     Text("File: ${kind.downloadName} · about $size", style = Kds.type.mono, color = c.foreground)
                     Text("Needs a free Hugging Face account: sign in on huggingface.co and accept Google's Gemma licence, " +

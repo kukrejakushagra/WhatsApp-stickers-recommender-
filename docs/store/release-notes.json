@@ -10,5 +10,9 @@
   "46": {
     "en-GB": "• Settings › Background now shows whether battery use is Unrestricted, with the exact steps for your phone and a button to the right screen\n\nAlso in 1.1: guided setup, search models that download by themselves, a dark icon and a calmer look.",
     "hi-IN": "• सेटिंग्स › Background में अब दिखता है कि बैटरी का इस्तेमाल Unrestricted है या नहीं, आपके फ़ोन के लिए सही कदम और सही स्क्रीन खोलने का बटन\n\n1.1 में यह भी: आसान सेटअप, अपने-आप डाउनलोड होने वाले सर्च मॉडल, डार्क आइकन और साफ़-सुथरा रूप।"
+  },
+  "47": {
+    "en-GB": "• Search models download only when you tap Download: one at a time or all at once, with Pause, Resume and Retry\n• Wi-Fi only by default; switch it off to use mobile data, or download later from Settings\n\nAlso in 1.1: guided setup, a dark icon, battery status in Settings.",
+    "hi-IN": "• सर्च मॉडल तभी डाउनलोड होते हैं जब आप Download दबाएँ: एक-एक करके या सब एक साथ, Pause, Resume और Retry के साथ\n• पहले से सिर्फ़ Wi-Fi पर; मोबाइल डेटा के लिए इसे बंद करें, या बाद में सेटिंग्स से डाउनलोड करें\n\n1.1 में यह भी: आसान सेटअप, डार्क आइकन, सेटिंग्स में बैटरी स्थिति।"
   }
 }

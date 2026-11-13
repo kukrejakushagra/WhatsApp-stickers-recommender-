@@ -109,16 +109,19 @@ data class ModelsState(
     val importing: String? = null,
     /** The row whose Import button started the current import, if any. */
     val importingKind: ModelKind? = null,
-    /** In-app download of the search models: running (or waiting for a network), with progress. */
-    val downloading: Boolean = false,
-    val downloadText: String? = null,
-    val downloadFraction: Float? = null,
-    /** Bytes so far for the model being downloaded right now. */
-    val downloadKind: ModelKind? = null,
-    val downloadError: String? = null,
+    /** In-app downloads of the search models, one per model, started only when the user taps Download. */
+    val downloads: Map<ModelKind, app.stickersearch.index.Dl> = emptyMap(),
     /** Downloads wait for Wi-Fi unless the user allowed mobile data. */
     val wifiOnly: Boolean = true,
 ) {
+    fun dl(k: ModelKind) = downloads[k] ?: app.stickersearch.index.Dl()
+    /** The three search models (Gemma is never downloaded by the app). */
+    val searchKinds get() = listOf(ModelKind.E5, ModelKind.SIGLIP_VISION, ModelKind.SIGLIP_TEXT)
+    val missingSearch get() = searchKinds.filterNot { has(it) }
+    val anyDownloadActive get() = missingSearch.any { dl(it).active }
+    /** Bytes so far and the total, over the search models (ready ones count as complete). */
+    val searchDone get() = searchKinds.sumOf { k -> if (has(k)) present[k] ?: 0L else dl(k).done }
+    val searchTotal get() = searchKinds.sumOf { k -> if (has(k)) present[k] ?: 0L else dl(k).total.takeIf { it > 0 } ?: (k.approxMb.toLong() shl 20) }
     /** The search models (everything except Gemma), which the app can download itself. */
     val searchModelsReady get() = has(ModelKind.E5) && has(ModelKind.SIGLIP_VISION) && has(ModelKind.SIGLIP_TEXT)
     val readyCount get() = ModelKind.entries.count { has(it) }
@@ -450,63 +453,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------------- model downloads ----------------
 
-    /** Starts (or restarts) downloading the search models. The user agreed to it on the screen that calls this. */
-    fun downloadModels() {
-        _state.update { it.copy(models = it.models.copy(downloading = true, downloadError = null, downloadText = "Starting")) }
-        app.stickersearch.index.ModelDownloadWorker.enqueue(ctx, _state.value.models.wifiOnly)
+    private val D = app.stickersearch.index.ModelDownloadWorker
+
+    /** Download, Resume or Retry one model. Only ever called from a tap. */
+    fun downloadModel(kind: ModelKind) {
+        if (models.has(kind)) return
+        D.enqueue(ctx, kind, _state.value.models.wifiOnly)
     }
 
-    fun cancelModelDownload() {
-        app.stickersearch.index.ModelDownloadWorker.cancel(ctx)
-        _state.update { it.copy(models = it.models.copy(downloading = false, downloadText = null, downloadFraction = null, downloadKind = null)) }
-    }
+    fun pauseModel(kind: ModelKind) = D.pause(ctx, kind)
+
+    fun notice(text: String) = toast(text)
+
+    fun downloadAll() = _state.value.models.missingSearch.forEach { downloadModel(it) }
+
+    fun pauseAll() = _state.value.models.missingSearch.forEach { if (_state.value.models.dl(it).active) pauseModel(it) }
 
     fun setWifiOnly(on: Boolean) {
         uiPrefs.edit().putBoolean("wifi_only", on).apply()
         _state.update { it.copy(models = it.models.copy(wifiOnly = on)) }
-        // A running download picks up the new rule straight away; nothing downloaded so far is lost.
-        if (_state.value.models.downloading) app.stickersearch.index.ModelDownloadWorker.enqueue(ctx, on)
+        // Running or waiting downloads pick up the new rule straight away; nothing downloaded so far is lost.
+        _state.value.models.missingSearch.filter { _state.value.models.dl(it).active }.forEach { D.enqueue(ctx, it, on) }
     }
+
+    private fun setDl(kind: ModelKind, dl: app.stickersearch.index.Dl) =
+        _state.update { it.copy(models = it.models.copy(downloads = it.models.downloads + (kind to dl))) }
 
     private fun observeModelDownload() {
         _state.update { it.copy(models = it.models.copy(wifiOnly = uiPrefs.getBoolean("wifi_only", true))) }
-        val W = app.stickersearch.index.ModelDownloadWorker
-        viewModelScope.launch {
-            androidx.work.WorkManager.getInstance(ctx).getWorkInfosForUniqueWorkFlow(W.UNIQUE).collect { infos ->
-                val w = infos.lastOrNull() ?: return@collect
-                when (w.state) {
-                    androidx.work.WorkInfo.State.RUNNING -> {
-                        val d = w.progress.getInt(W.KEY_DONE_MB, 0); val t = w.progress.getInt(W.KEY_TOTAL_MB, 0)
-                        val kind = w.progress.getString(W.KEY_KIND)?.let { runCatching { ModelKind.valueOf(it) }.getOrNull() }
-                        _state.update { it.copy(models = it.models.copy(
-                            downloading = true, downloadError = null, downloadKind = kind,
-                            downloadText = if (t > 0) "%,d of %,d MB".format(d, t) else "Starting",
-                            downloadFraction = if (t > 0) d.toFloat() / t else null,
-                        )) }
-                        refreshModels()
-                    }
-                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED ->
-                        _state.update { it.copy(models = it.models.copy(
-                            downloading = true, downloadKind = null,
-                            downloadText = if (it.models.wifiOnly) "Waiting for Wi-Fi" else "Waiting for a connection",
-                        )) }
-                    androidx.work.WorkInfo.State.SUCCEEDED -> {
-                        _state.update { it.copy(models = it.models.copy(downloading = false, downloadText = null, downloadFraction = null, downloadKind = null)) }
+        // The single "download everything" job of 1.1.0-1.1.3 is replaced by one job per model.
+        androidx.work.WorkManager.getInstance(ctx).cancelUniqueWork("model-download")
+        for (kind in models.autoDownload) {
+            viewModelScope.launch {
+                androidx.work.WorkManager.getInstance(ctx).getWorkInfosForUniqueWorkFlow(D.unique(kind)).collect { infos ->
+                    val w = infos.lastOrNull()
+                    val part = withContext(Dispatchers.IO) { models.partFile(kind).let { if (it.exists()) it.length() else 0L } }
+                    val status = app.stickersearch.index.ModelDownloads.status(w?.state, part)
+                    val total = D.total(ctx, kind)
+                    val done = if (w?.state == androidx.work.WorkInfo.State.RUNNING) w.progress.getLong(D.KEY_DONE, part).takeIf { it > 0 } ?: part else part
+                    setDl(kind, app.stickersearch.index.Dl(
+                        status, done, if (w?.state == androidx.work.WorkInfo.State.RUNNING) w.progress.getLong(D.KEY_TOTAL, total) else total,
+                        if (status == app.stickersearch.index.DlStatus.FAILED) w?.outputData?.getString(D.KEY_ERROR) ?: "The download didn't finish." else null,
+                    ))
+                    if (w?.state == androidx.work.WorkInfo.State.SUCCEEDED) {
                         refreshModels()
                         _state.update { it.copy(storage = storage()) }
                         withContext(Dispatchers.Default) { engine.close(); engine.warmUp() }
                         val id = w.id.toString()
-                        if (uiPrefs.getString("download_seen", null) != id) {
-                            uiPrefs.edit().putString("download_seen", id).apply()
-                            toast("Search models are ready. Search by meaning and by look works now.")
+                        if (uiPrefs.getString("download_seen_${kind.name}", null) != id) {
+                            uiPrefs.edit().putString("download_seen_${kind.name}", id).apply()
+                            if (_state.value.models.searchModelsReady) toast("Search models are ready. Search by meaning and by look works now.")
                         }
                     }
-                    androidx.work.WorkInfo.State.FAILED -> _state.update { it.copy(models = it.models.copy(
-                        downloading = false, downloadText = null, downloadFraction = null, downloadKind = null,
-                        downloadError = w.outputData.getString(W.KEY_ERROR) ?: "The download didn't finish.",
-                    )) }
-                    androidx.work.WorkInfo.State.CANCELLED -> _state.update { it.copy(models = it.models.copy(
-                        downloading = false, downloadText = null, downloadFraction = null, downloadKind = null)) }
                 }
             }
         }
