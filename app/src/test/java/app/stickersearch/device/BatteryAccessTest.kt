@@ -34,9 +34,11 @@ class BatteryAccessTest {
         }
     }
 
-    @Test fun makerTipIsAppended() {
-        assertTrue(BatteryAccess.steps(34, "samsung").contains("Never sleeping apps"))
-        assertTrue(BatteryAccess.steps(29, "Xiaomi").contains("Autostart"))
+    @Test fun knownMakersGetTheirOwnRowNotATip() {
+        // Samsung, Xiaomi, Honor... have a separate row in Settings, so the Android steps stay short.
+        assertFalse(BatteryAccess.steps(34, "samsung").contains("Never sleeping apps"))
+        assertFalse(BatteryAccess.steps(33, "HONOR").contains("App launch"))
+        // Unknown makers still get the general tip.
         assertTrue(BatteryAccess.steps(34, "SomeBrand").contains("auto-start"))
     }
 }

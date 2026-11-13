@@ -186,6 +186,8 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
             }
         status(applicationContext).edit().remove(KEY_GEMMA_ERROR).putString(KEY_GEMMA_BACKEND, backend).apply()
         val text = if (models.has(ModelKind.E5)) runCatching { TextEmbedder(applicationContext, models.file(ModelKind.E5)) }.getOrNull() else null
+        // Records the run so a stop by the phone (which apps can't otherwise detect) shows up in Settings.
+        RunWatch.start(ctx)
         try {
             phase = DESCRIBE_PHASE
             done = 0
@@ -227,11 +229,27 @@ class AiWorker(context: Context, params: WorkerParameters) : CoroutineWorker(con
             graphPass()
         } finally {
             text?.close()
+            RunWatch.end(ctx, stoppedBy())
+        }
+    }
+
+    /** Why WorkManager stopped this run, when it was Android's decision rather than an unplug or a pause. */
+    private fun stoppedBy(): String? {
+        if (!isStopped || isPaused(applicationContext)) return null
+        if (android.os.Build.VERSION.SDK_INT < 31) return null
+        return when (stopReason) {
+            androidx.work.WorkInfo.STOP_REASON_BACKGROUND_RESTRICTION -> "Android's background restriction stopped it"
+            androidx.work.WorkInfo.STOP_REASON_APP_STANDBY -> "Android put the app to sleep (app standby)"
+            androidx.work.WorkInfo.STOP_REASON_QUOTA -> "Android's background time limit ran out"
+            androidx.work.WorkInfo.STOP_REASON_TIMEOUT, androidx.work.WorkInfo.STOP_REASON_FOREGROUND_SERVICE_TIMEOUT -> "Android's time limit for background work ran out"
+            androidx.work.WorkInfo.STOP_REASON_DEVICE_STATE, androidx.work.WorkInfo.STOP_REASON_SYSTEM_PROCESSING -> "the phone stopped it to save power"
+            else -> null // unplugged, cancelled by the app, user, constraints: a normal end
         }
     }
 
     private suspend fun tick() {
         done++
+        if (phase == DESCRIBE_PHASE && done % 2 == 0) RunWatch.beat(applicationContext, done)
         if (done % 4 == 0) {
             setProgress(workDataOf(KEY_PHASE to phase, KEY_DONE to done, KEY_TOTAL to total))
             IndexNotification.update(applicationContext, done, total, phase)

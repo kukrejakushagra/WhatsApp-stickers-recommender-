@@ -18,5 +18,9 @@
   "48": {
     "en-GB": "• A 25-second \"how it works\" video after the welcome screen (skip any time; watch again in Settings › Help)\n• Search models download only when you tap, with Pause and Resume\n\nAlso in 1.1: guided setup, a dark icon, battery status in Settings.",
     "hi-IN": "• स्वागत स्क्रीन के बाद 25 सेकंड का \"कैसे काम करता है\" वीडियो (कभी भी छोड़ें; सेटिंग्स › Help में दोबारा देखें)\n• सर्च मॉडल तभी डाउनलोड होते हैं जब आप दबाएँ, Pause और Resume के साथ\n\n1.1 में यह भी: आसान सेटअप, डार्क आइकन, सेटिंग्स में बैटरी स्थिति।"
+  },
+  "49": {
+    "en-GB": "• Settings › Background now separates Android's battery setting from your phone maker's own (like Honor's App launch or Xiaomi's Autostart), with a button to the right screen\n• If your phone stops a describing run, the app tells you when and what to change",
+    "hi-IN": "• सेटिंग्स › Background में अब Android की बैटरी सेटिंग और आपके फ़ोन ब्रांड की अपनी सेटिंग (जैसे Honor का App launch या Xiaomi का Autostart) अलग दिखती हैं, सही स्क्रीन खोलने के बटन के साथ\n• अगर फ़ोन बीच में ही विवरण बनाना रोक दे, तो ऐप बताता है कि कब और क्या बदलना है"
   }
 }

@@ -44,7 +44,7 @@ object DeviceCaps {
         "samsung" -> "On Samsung phones, also add AI Sticker Search to “Never sleeping apps” (Settings › Battery › Background usage limits)."
         "oneplus", "oppo", "realme" -> "On OnePlus, Oppo and Realme phones, also allow Auto-launch and background activity for AI Sticker Search."
         "vivo", "iqoo" -> "On Vivo and iQOO phones, also allow high background power consumption for AI Sticker Search."
-        "huawei", "honor" -> "On Huawei and Honor phones, also set AI Sticker Search to “Manage manually” in Settings › Battery › App launch, with all three switches on."
+        "huawei", "honor" -> "On Huawei and Honor phones and tablets, also open Settings › Battery › App launch (or App info › Power usage details › App launch), turn off Manage automatically for AI Sticker Search, and turn on Auto-launch, Secondary launch and Run in background."
         "asus" -> "On Asus phones, also allow Auto-start for AI Sticker Search in Mobile Manager."
         else -> "If overnight runs still stop, check your phone's battery settings for an “auto-start” or “background activity” option for AI Sticker Search."
     }

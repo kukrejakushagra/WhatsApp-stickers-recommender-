@@ -18,7 +18,7 @@ class DeviceCapsTest {
         assertTrue(DeviceCaps.batteryTip("Xiaomi").contains("Autostart"))
         assertTrue(DeviceCaps.batteryTip("POCO").contains("Autostart"))
         assertTrue(DeviceCaps.batteryTip("samsung").contains("Never sleeping"))
-        assertTrue(DeviceCaps.batteryTip("HONOR").contains("Manage manually"))
+        assertTrue(DeviceCaps.batteryTip("HONOR").contains("turn off Manage automatically"))
         assertTrue(DeviceCaps.batteryTip("OnePlus").contains("Auto-launch"))
         assertTrue(DeviceCaps.batteryTip("vivo").contains("background power"))
         assertTrue(DeviceCaps.batteryTip("Google").contains("auto-start"))

@@ -73,12 +73,17 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
         when (state.openSettingsAt) {
             null -> return@LaunchedEffect
             "pc" -> pcPanel.bringIntoView()
+            "models", "battery" -> return@LaunchedEffect
             else -> statusPanel.bringIntoView()
         }
         actions.settingsOpened()
     }
     val pickedStickersOnly = p.safHeld && p.safTreeId?.endsWith("WhatsApp Stickers") == true
     val modelsPanel = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val batteryPanel = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    androidx.compose.runtime.LaunchedEffect(state.openSettingsAt) {
+        if (state.openSettingsAt == "battery") { batteryPanel.bringIntoView(); actions.settingsOpened() }
+    }
     androidx.compose.runtime.LaunchedEffect(state.openSettingsAt) {
         if (state.openSettingsAt == "models") { modelsPanel.bringIntoView(); actions.settingsOpened() }
     }
@@ -240,7 +245,10 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
             ))
 
             // ---- 8. Background ----
-            KdsSettingsGroup("Background", listOf(
+            val maker = remember { app.stickersearch.device.PhoneMaker.of(android.os.Build.MANUFACTURER) }
+            Column(Modifier.bringIntoViewRequester(batteryPanel), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            state.lastStop?.let { st -> LastStopCallout(st, state, maker, actions) }
+            KdsSettingsGroup("Background", listOfNotNull<@Composable () -> Unit>(
                 {
                     KdsSettingsRow(
                         title = "Daily check while charging", icon = R.drawable.ic_kds_refresh,
@@ -252,7 +260,7 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                     KdsSettingsRow(
                         title = "Skip battery optimisation", icon = R.drawable.ic_kds_battery,
                         description = "Lets the app keep working while the phone sleeps. On its own this often isn't enough " +
-                            "for long describing runs; see Unrestricted battery use below.",
+                            "for long describing runs; see the rows below.",
                         trailing = {
                             if (state.batteryUnrestricted) KdsBadge("Allowed", BadgeTone.SOFT)
                             else KdsButton("Allow", actions.openBatterySettings, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
@@ -263,10 +271,10 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                     val level = app.stickersearch.device.BatteryAccess.level(state.battery)
                     val steps = app.stickersearch.device.BatteryAccess.steps(android.os.Build.VERSION.SDK_INT, android.os.Build.MANUFACTURER)
                     KdsSettingsRow(
-                        title = "Unrestricted battery use", icon = R.drawable.ic_kds_battery,
+                        title = "Android battery setting", icon = R.drawable.ic_kds_battery,
                         description = when (level) {
                             app.stickersearch.device.BatteryAccess.Level.UNRESTRICTED ->
-                                "Describing can run for hours while charging. If runs still stop: $steps"
+                                "Unrestricted in Android's own setting." + (maker?.let { " ${it.brand} adds its own setting on top; see ${it.setting} below." } ?: " If runs still stop: $steps")
                             app.stickersearch.device.BatteryAccess.Level.RESTRICTED ->
                                 "Android is holding the app back in the background, so describing stops early. To fix it: $steps"
                             else -> "Needed for describing to run for hours (with thousands of stickers it takes several nights). " +
@@ -286,7 +294,23 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                         }
                     }
                 },
+                maker?.let { mk ->
+                    {
+                        KdsSettingsRow(
+                            title = "${mk.brand}: ${mk.setting}", icon = R.drawable.ic_kds_phone,
+                            description = mk.steps + " The app can't check this setting itself, so mark it Done when you've changed it.",
+                            trailing = {
+                                KdsFilterChip(if (state.makerStepDone) "Done" else "Not yet", state.makerStepDone,
+                                    { actions.setMakerStepDone(!state.makerStepDone) })
+                            },
+                        )
+                        Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 16.dp, bottom = 14.dp)) {
+                            KdsButton("Open ${mk.setting}", actions.openMakerSettings, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
+                        }
+                    }
+                },
             ))
+            }
 
             // ---- 9. Data & privacy ----
             KdsSettingsGroup("Data & privacy", listOf(
@@ -554,6 +578,13 @@ private fun StatusPanel(state: UiState, actions: AppActions) {
         }
 
         // Problems stay visible: they need you.
+        state.lastStop?.let { st ->
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("The phone stopped the last run after ${st.minutes} min", style = Kds.type.caption, color = Kds.colors.warning, modifier = Modifier.weight(1f))
+                KdsButton("Fix", { actions.openSettingsAt("battery") }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+            }
+        }
         ix.error?.let {
             Spacer(Modifier.height(10.dp))
             KdsCallout("$it. Check the folder access above, then scan again.", CalloutTone.ERROR)
@@ -658,6 +689,27 @@ private fun PcPanel(state: UiState, actions: AppActions) {
                 "another phone, Import results adds them to the same stickers, matched by each file's fingerprint.",
             style = Kds.type.caption, color = Kds.colors.mutedForeground,
         )
+    }
+}
+
+/** "Your phone stopped describing…": what the run watcher saw, and what to change. */
+@Composable
+private fun LastStopCallout(st: app.stickersearch.index.RunWatch.Stop, state: UiState, maker: app.stickersearch.device.PhoneMaker?, actions: AppActions) {
+    val time = remember(st.at) { java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(st.at)) }
+    val androidOk = app.stickersearch.device.BatteryAccess.level(state.battery) == app.stickersearch.device.BatteryAccess.Level.UNRESTRICTED
+    val likely = when {
+        st.cause == app.stickersearch.index.RunWatch.Cause.MEMORY -> "Android needed the memory. Closing other apps while charging helps."
+        !androidOk -> "Android's battery setting isn't Unrestricted yet; start with that row below."
+        maker != null && !state.makerStepDone -> "Android's setting is Unrestricted, so ${maker.brand}'s own ${maker.setting} setting is the likely cause; see the last row below."
+        maker != null -> "You marked ${maker.brand}'s ${maker.setting} as done, but the phone still stopped it. Check it again: some updates reset it."
+        else -> "Check your phone's battery settings for an auto-start or background activity option for AI Sticker Search."
+    }
+    Column {
+        KdsCallout(
+            "At $time, after ${st.minutes} min and ${st.described} stickers: ${st.detail}. $likely",
+            CalloutTone.WARNING, title = "Your phone stopped describing",
+        )
+        KdsButton("Dismiss", actions.dismissLastStop, variant = ButtonVariant.GHOST, size = ButtonSize.SM, modifier = Modifier.padding(top = 4.dp))
     }
 }
 

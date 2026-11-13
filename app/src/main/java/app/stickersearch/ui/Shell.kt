@@ -113,6 +113,9 @@ data class AppActions(
     val openAppSettings: () -> Unit = {},
     /** A short message at the bottom of the screen. */
     val notice: (String) -> Unit = {},
+    val setMakerStepDone: (Boolean) -> Unit = {},
+    val openMakerSettings: () -> Unit = {},
+    val dismissLastStop: () -> Unit = {},
 )
 
 @Composable
@@ -227,6 +230,12 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             openSettingsAt = vm::openSettingsAt,
             openAppSettings = { app.stickersearch.device.BatteryAccess.openAppSettings(context) },
             notice = vm::notice,
+            setMakerStepDone = vm::setMakerStepDone,
+            openMakerSettings = {
+                app.stickersearch.device.PhoneMaker.of(android.os.Build.MANUFACTURER)?.open(context)
+                    ?: app.stickersearch.device.BatteryAccess.openAppSettings(context)
+            },
+            dismissLastStop = vm::dismissLastStop,
         )
     }
     AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)

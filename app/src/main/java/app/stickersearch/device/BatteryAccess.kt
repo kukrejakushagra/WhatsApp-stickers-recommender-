@@ -55,7 +55,8 @@ object BatteryAccess {
                 "Then open Settings › Apps › Special app access › Battery optimisation, switch the list to All apps, " +
                 "tap AI Sticker Search and choose Don't optimise."
         }
-        return android + " " + DeviceCaps.batteryTip(manufacturer)
+        // Known makers get their own row in Settings; others get the general tip here.
+        return if (PhoneMaker.of(manufacturer) != null) android else android + " " + DeviceCaps.batteryTip(manufacturer)
     }
 
     /** App info: the one screen every Android version and phone maker has; its battery page is one tap away. */

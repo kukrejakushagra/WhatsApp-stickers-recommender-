@@ -211,6 +211,10 @@ data class UiState(
     val setupStep: Int = 0,
     /** Background battery status: Unrestricted, Optimised or Restricted. */
     val battery: app.stickersearch.device.BatteryAccess.State = app.stickersearch.device.BatteryAccess.State(),
+    /** The last describing run the phone stopped part-way, if any (cleared after a run ends normally). */
+    val lastStop: app.stickersearch.index.RunWatch.Stop? = null,
+    /** The user said they've done the phone maker's step (e.g. Honor's App launch); the app can't check it. */
+    val makerStepDone: Boolean = false,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -311,6 +315,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             app.stickersearch.ml.DescribeGuard.takeUnfinishedEmbed(ctx)?.let { id ->
                 events.add("e5_crash", mapOf("sticker" to id))
             }
+            // A describing run that never recorded its end: the phone (or Android) stopped it.
+            app.stickersearch.index.RunWatch.takeUnfinished(ctx)?.let { s ->
+                _state.update { it.copy(lastStop = s) }
+                events.add("run_stopped", mapOf("cause" to s.cause.name, "minutes" to s.minutes, "described" to s.described, "detail" to s.detail))
+            }
             app.stickersearch.ml.DescribeGuard.takeUnfinished(ctx)?.let { u ->
                 if (u.stickerId > 0) {
                     db.ai().annotationFailed(u.stickerId, "The application closed while describing this on the ${u.backend}: ${u.why}", System.currentTimeMillis())
@@ -367,7 +376,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ---------------- permissions & scanning ----------------
 
     fun refreshPermissions() {
-        _state.update { it.copy(permissions = readPermissions(), eventCount = events.all().length(), batteryUnrestricted = batteryUnrestricted(), battery = app.stickersearch.device.BatteryAccess.read(ctx)) }
+        _state.update { it.copy(permissions = readPermissions(), eventCount = events.all().length(), batteryUnrestricted = batteryUnrestricted(), battery = app.stickersearch.device.BatteryAccess.read(ctx),
+            lastStop = app.stickersearch.index.RunWatch.lastStop(ctx), makerStepDone = uiPrefs.getBoolean("maker_step_done", false)) }
         refreshModels()
         viewModelScope.launch(Dispatchers.IO) { refreshPacks(); _state.update { it.copy(storage = storage()) } }
     }
@@ -464,6 +474,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun pauseModel(kind: ModelKind) = D.pause(ctx, kind)
 
     fun notice(text: String) = toast(text)
+
+    fun setMakerStepDone(done: Boolean) {
+        uiPrefs.edit().putBoolean("maker_step_done", done).apply()
+        _state.update { it.copy(makerStepDone = done) }
+    }
+
+    fun dismissLastStop() {
+        app.stickersearch.index.RunWatch.dismiss(ctx)
+        _state.update { it.copy(lastStop = null) }
+    }
 
     fun downloadAll() = _state.value.models.missingSearch.forEach { downloadModel(it) }
 
@@ -1250,6 +1270,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 put("batteryLevel", app.stickersearch.device.BatteryAccess.level(b).name)
                 put("backgroundRestricted", b.backgroundRestricted)
                 put("standbyBucket", b.standbyBucket)
+                put("maker", app.stickersearch.device.PhoneMaker.of(android.os.Build.MANUFACTURER)?.name ?: android.os.Build.MANUFACTURER)
+                put("makerStepDone", uiPrefs.getBoolean("maker_step_done", false))
+                app.stickersearch.index.RunWatch.lastStop(ctx)?.let { put("lastStop", "${it.cause} after ${it.minutes} min, ${it.described} described: ${it.detail}") }
             }
             .put("graph", JSONObject().apply {
                 db.graph().counts().forEach { put(it.type.name, it.n) }
