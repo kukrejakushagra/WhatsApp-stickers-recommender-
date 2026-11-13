@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,19 +8,37 @@ plugins {
 }
 
 android {
-    namespace = "com.kukreja.stickersearch"
+    namespace = "app.stickersearch"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.kukreja.stickersearch"
+        applicationId = "app.stickersearch"
         // Android 9+ (API 28): the system decodes animated WebP from there. Newer APIs are version-checked (see compat/).
         minSdk = 28
         targetSdk = 36
-        versionCode = 40
+        versionCode = 41
         versionName = "1.0.0"
         ndk {
-            // The phone is arm64; other ABIs would only add ~100 MB of native ML libraries.
+            // 64-bit ARM: nearly every phone since ~2017; other ABIs would add ~100 MB of native ML libraries.
             abiFilters += "arm64-v8a"
+        }
+    }
+
+    // Play release signing (the "upload key"). The key and its passwords live outside the repo:
+    // keystore.properties at the project root (gitignored), or a file named by the
+    // STICKERSEARCH_KEYSTORE_PROPERTIES environment variable. Without it, release builds fall back
+    // to the debug key, so anyone can still build and sideload.
+    val keystoreProps = (System.getenv("STICKERSEARCH_KEYSTORE_PROPERTIES")?.let { file(it) } ?: rootProject.file("keystore.properties"))
+        .takeIf { it.exists() }
+        ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+    signingConfigs {
+        if (keystoreProps != null) {
+            create("upload") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
         }
     }
 
@@ -28,8 +48,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideloaded personal build: signed with the debug key so it installs over earlier debug builds.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystoreProps != null) signingConfigs.getByName("upload") else signingConfigs.getByName("debug")
         }
     }
     packaging {

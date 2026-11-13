@@ -1,0 +1,109 @@
+package app.stickersearch.diagnostics
+
+import android.content.Context
+import android.net.Uri
+import app.stickersearch.discovery.StickerSource
+import app.stickersearch.media.FormatSniffer
+import app.stickersearch.media.Hasher
+import app.stickersearch.media.Thumbnailer
+import app.stickersearch.model.DiscoveredFile
+import app.stickersearch.model.ProcessedFile
+import app.stickersearch.model.SourceProbe
+import app.stickersearch.model.SourceResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import app.stickersearch.model.StickerFormat
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.ZipInputStream
+
+data class ScanProgress(val phase: String, val done: Int, val total: Int)
+
+data class ScanOutcome(
+    val sources: List<SourceResult>,
+    val processed: List<ProcessedFile>,
+    val summary: ScanSummary,
+    val startedAtMs: Long,
+    val durationMs: Long,
+)
+
+/**
+ * Runs every source, then hashes / sniffs / thumbnails each discovered file.
+ * Thumbnails are keyed by SHA-256, so a rescan only decodes files it has not seen before.
+ */
+class ScanEngine(private val context: Context, private val thumbnailer: Thumbnailer) {
+
+    suspend fun run(sources: List<StickerSource>, onProgress: (ScanProgress) -> Unit): ScanOutcome =
+        withContext(Dispatchers.IO) {
+            val start = System.currentTimeMillis()
+            val results = sources.mapIndexed { i, s ->
+                onProgress(ScanProgress("Listing ${s.id.label}", i, sources.size))
+                try { s.scan() } catch (e: Exception) {
+                    SourceResult(
+                        SourceProbe(s.id, false, "${e.javaClass.simpleName}: ${e.message}"),
+                        emptyList(),
+                    )
+                }
+            }
+            val all = results.flatMap { it.files }
+            val done = AtomicInteger(0)
+            val gate = Semaphore(4) // bounded parallelism keeps memory flat on mid-range devices
+            val processed = coroutineScope {
+                all.map { f ->
+                    async {
+                        gate.withPermit { process(f) }.also {
+                            onProgress(ScanProgress("Processing", done.incrementAndGet(), all.size))
+                        }
+                    }
+                }.awaitAll()
+            }
+            val summary = ScanAggregator.aggregate(processed)
+            ScanOutcome(results, processed, summary, start, System.currentTimeMillis() - start)
+        }
+
+    private fun process(f: DiscoveredFile): ProcessedFile {
+        if (f.sizeBytes > MAX_BYTES) return ProcessedFile(f, null, null, null, "skipped: ${f.sizeBytes} bytes > $MAX_BYTES")
+        val bytes = try {
+            context.contentResolver.openInputStream(Uri.parse(f.uri))?.use { it.readBytes() }
+                ?: return ProcessedFile(f, null, null, null, "openInputStream returned null")
+        } catch (e: Exception) {
+            return ProcessedFile(f, null, null, null, "read failed: ${e.javaClass.simpleName}: ${e.message}")
+        }
+        val sha = Hasher.sha256(bytes)
+        val format = FormatSniffer.sniff(bytes)
+        if (format.format == StickerFormat.LOTTIE_WAS) {
+            // Not decodable by ImageDecoder; rendered with Lottie from M2. Record the archive layout.
+            return ProcessedFile(f, sha, format, null, null, null, zipEntries(bytes))
+        }
+        if (format.format == StickerFormat.UNKNOWN) {
+            return ProcessedFile(f, sha, format, null, "unrecognised format")
+        }
+        var error: String? = null
+        val thumb = try { thumbnailer.ensureThumbnail(sha, bytes) } catch (e: Exception) {
+            error = "thumbnail failed: ${e.javaClass.simpleName}: ${e.message}"; null
+        }
+        val animOk = if (format.isAnimated) {
+            try { Thumbnailer.decodesAsAnimation(bytes) } catch (e: Exception) {
+                error = (error?.let { "$it; " } ?: "") + "animated decode failed: ${e.message}"; false
+            }
+        } else null
+        return ProcessedFile(f, sha, format, thumb, error, animOk)
+    }
+
+    private fun zipEntries(bytes: ByteArray): List<String> = runCatching {
+        ZipInputStream(bytes.inputStream()).use { zip ->
+            generateSequence { zip.nextEntry }.take(20).map { e ->
+                val size = zip.readBytes().size // entry sizes are often absent from local headers
+                "${e.name} ($size B)"
+            }.toList()
+        }
+    }.getOrElse { listOf("unreadable zip: ${it.message}") }
+
+    companion object {
+        const val MAX_BYTES = 10L * 1024 * 1024
+    }
+}

@@ -55,9 +55,13 @@ The tokenizer tests compare against reference IDs and run only when the tokenize
 ./gradlew testDebugUnitTest -PspModelsDir=/path/with/e5-and-siglip2-folders
 ```
 
+## Google Play
+
+Package `app.stickersearch`. How to build the signed bundle and fill in Play Console (listing, data safety, permission declarations, closed testing) is in [`docs/play-console.md`](docs/play-console.md). Privacy policy: [`docs/privacy-policy.md`](docs/privacy-policy.md).
+
 ## Release build
 
-The sideload build is the minified release, about 32 MB. R8 shrinking takes the code from about 35 MB to 4.5 MB, and native libraries are stored compressed. It's signed with the debug key so it installs over earlier builds:
+The sideload build is the minified release, about 32 MB. R8 shrinking takes the code from about 35 MB to 4.5 MB, and native libraries are stored compressed. Without an upload key configured it's signed with the debug key; with one (see the Google Play section) it's signed for release:
 
 ```bash
 ./gradlew assembleRelease
