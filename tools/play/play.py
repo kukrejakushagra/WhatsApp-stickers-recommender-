@@ -115,7 +115,7 @@ def do_listing(play: Play):
 
 def do_details(play: Play, contact_email=None):
     d = json.loads((STORE / "details.json").read_text())
-    body = {k: v for k, v in d.items() if k in ("contactWebsite", "defaultLanguage") and v}
+    body = {k: v for k, v in d.items() if k in ("contactWebsite", "contactEmail", "defaultLanguage") and v}
     if contact_email:  # passed on the command line, so no address is stored in the repo
         body["contactEmail"] = contact_email
     # Read what's there and write it back with only these fields changed, so the contact email and

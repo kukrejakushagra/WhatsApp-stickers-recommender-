@@ -40,6 +40,6 @@ The app is not directed at children under 13.
 If this policy changes, the new version will be published at this address with a new date.
 
 ## Contact
-Questions: **[your contact email]**
+Questions: **squabla.adm@gmail.com**
 
 _AI Sticker Search is an independent app and is not affiliated with, endorsed by, or sponsored by WhatsApp LLC or Meta Platforms, Inc._

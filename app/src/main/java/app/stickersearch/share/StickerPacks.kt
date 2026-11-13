@@ -46,8 +46,8 @@ object StickerPacks {
 
     const val MAX = 30
     const val MIN = 3
-    /** Tray icon names change with the app icon (1.1.1), so WhatsApp picks up the new one. */
-    const val TRAY = "tray2.png"
+    /** Tray icon names change with the app icon (1.1.1, dark in 1.1.2), so WhatsApp picks up the new one. */
+    const val TRAY = "tray3.png"
     private const val PREFS = "sticker_packs"
     private const val CUSTOM = "custom_packs"
 
@@ -219,7 +219,7 @@ object StickerPacks {
      * the two packs are easy to tell apart in WhatsApp's sticker picker.
      */
     fun trayName(pack: Pack) = if (pack.animated) ANIM_TRAY else TRAY
-    private const val ANIM_TRAY = "tray_anim2.png"
+    private const val ANIM_TRAY = "tray_anim3.png"
 
     /** Draws the tray icon if it's missing; true when it had to be made. */
     private fun ensureTray(ctx: Context, pack: Pack): Boolean {

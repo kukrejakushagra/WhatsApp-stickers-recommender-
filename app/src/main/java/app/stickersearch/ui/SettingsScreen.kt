@@ -49,6 +49,7 @@ import app.stickersearch.ui.kds.theme.Kds
 
 internal const val PRIVACY_URL = "https://docs.google.com/document/d/15o4XnHJmeKDzgcoiLK6-bxirFbYaJd2OXg11Xv62fKQ/pub"
 internal const val TERMS_URL = "https://docs.google.com/document/d/1H2AihW7UtNvx2j7c9iSAPB-KGxVeShq28_hYwUNN8p4/pub"
+internal const val CONTACT_EMAIL = "squabla.adm@gmail.com"
 internal const val SOURCE_URL = "https://github.com/kukrejakushagra/whatsapp-stickers-recommender-"
 
 private fun mb(bytes: Long) = when {
@@ -320,6 +321,13 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                             "Lottie (Apache 2.0), AndroidX (Apache 2.0) and the Geist font (SIL OFL). Models: multilingual-e5-small (MIT), " +
                             "SigLIP2 (Apache 2.0), Gemma (Gemma Terms of Use).",
                         onClick = { actions.openUrl(SOURCE_URL) },
+                    )
+                },
+                {
+                    KdsSettingsRow(
+                        title = "Contact & feedback", icon = R.drawable.ic_kds_send,
+                        description = "Questions, ideas or a bug: write to $CONTACT_EMAIL.",
+                        onClick = { actions.openUrl("mailto:$CONTACT_EMAIL?subject=" + android.net.Uri.encode("AI Sticker Search feedback")) },
                     )
                 },
                 {

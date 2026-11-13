@@ -184,4 +184,8 @@ docs/                     design notes, Play Console checklist, privacy policy
 - **Font:** Geist, bundled under the SIL Open Font License (`third_party/geist/OFL.txt`).
 - **This project:** [MIT](LICENSE), © AI Sticker Search contributors.
 
+## Contact
+
+Questions, feedback or bug reports: **squabla.adm@gmail.com**, or open an issue on GitHub.
+
 AI Sticker Search is an independent project and is not affiliated with, endorsed by, or sponsored by WhatsApp LLC or Meta Platforms, Inc.

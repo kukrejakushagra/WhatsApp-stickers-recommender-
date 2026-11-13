@@ -403,15 +403,13 @@ private fun AttachmentRow(uris: List<android.net.Uri>, onRemove: (android.net.Ur
 internal enum class LibraryFilter(val label: String, val packName: String) {
     ALL("All", "My stickers"),
     ANIMATED("Animated", "Animated"),
-    LOTTIE("Lottie", "My stickers"),
     DESCRIBED("Described", "Described"),
     NOT_DESCRIBED("Not described", "New stickers"),
     ATTENTION("Need a look", "My stickers");
 
     fun matches(s: StickerRow) = when (this) {
         ALL -> true
-        ANIMATED -> s.isAnimated && !s.isLottie()
-        LOTTIE -> s.isLottie()
+        ANIMATED -> s.isAnimated // Lottie stickers too: they're animated, just not sendable as WhatsApp stickers
         DESCRIBED -> s.status == app.stickersearch.data.StickerStatus.INDEXED
         NOT_DESCRIBED -> s.status == app.stickersearch.data.StickerStatus.PENDING
         ATTENTION -> s.needsAttention()

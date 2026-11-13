@@ -40,7 +40,7 @@ Upload `app/build/outputs/bundle/release/app-release.aab`. Each upload needs a h
   - 512×512 icon.
   - 1024×500 feature graphic.
   - At least 2 phone screenshots (Stickers tab, a sticker's page, Settings).
-- **Category:** Tools (or Communication). Contact email: yours.
+- **Category:** Tools (or Communication). Contact email: squabla.adm@gmail.com.
 - **Privacy policy URL:** a public link to your privacy policy (for example a published Google Doc, or [`docs/privacy-policy.md`](privacy-policy.md) here). It must name a contact and be reachable without signing in.
 
 ## 3. App content (Policy › App content)
