@@ -62,6 +62,8 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
     val p = state.permissions
     var confirm by remember { mutableStateOf<String?>(null) }
     var showReport by remember { mutableStateOf(false) }
+    var howTo by remember { mutableStateOf(false) }
+    if (howTo) HowToDialog { howTo = false }
     var openPack by remember { mutableStateOf<String?>(null) }
     state.packs.firstOrNull { it.pack.id == openPack }?.let { info -> PackSheet(info, state, actions) { openPack = null } }
     // Opened from a notification: bring the panel it's about into view.
@@ -316,6 +318,13 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
 
             // ---- 10. Help & diagnostics ----
             KdsSettingsGroup("Help & diagnostics", listOf(
+                {
+                    KdsSettingsRow(
+                        title = "How to use", icon = R.drawable.ic_kds_play,
+                        description = "A 25-second video: type what you mean, tap the green button to send, tap a sticker to see more.",
+                        onClick = { howTo = true },
+                    )
+                },
                 {
                     KdsSettingsRow(
                         title = "Report", icon = R.drawable.ic_kds_copy,

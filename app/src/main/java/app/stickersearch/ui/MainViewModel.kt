@@ -1335,11 +1335,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val done = if (uiPrefs.contains("setup_done")) uiPrefs.getBoolean("setup_done", false)
             else ModelStore(ctx).let { m -> m.autoDownload.all { m.has(it) } }
         _state.update { it.copy(setupDone = done, setupDismissed = uiPrefs.getBoolean("setup_dismissed", false),
-            setupStep = uiPrefs.getInt("setup_step", 0)) }
+            setupStep = savedSetupStep()) }
+    }
+
+    /** Steps were renumbered in 1.1.5 (the video came in after Welcome): older saved steps move up one. */
+    private fun savedSetupStep(): Int = when {
+        uiPrefs.contains("setup_step2") -> uiPrefs.getInt("setup_step2", 0)
+        else -> uiPrefs.getInt("setup_step", 0).let { if (it >= 1) it + 1 else it }
     }
 
     fun setSetupStep(step: Int) {
-        uiPrefs.edit().putInt("setup_step", step).apply()
+        uiPrefs.edit().putInt("setup_step2", step).apply()
         _state.update { it.copy(setupStep = step) }
     }
 

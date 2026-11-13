@@ -43,9 +43,11 @@ import app.stickersearch.ui.kds.theme.Kds
 /** Setup steps, in order. The step is saved, so an interrupted setup resumes where it stopped. */
 internal object SetupStep {
     const val WELCOME = 0
-    const val FOLDER = 1
-    const val MODELS = 2
-    const val DESCRIBE = 3
+    /** The 26-second "how it works" video, right after Welcome. */
+    const val VIDEO = 1
+    const val FOLDER = 2
+    const val MODELS = 3
+    const val DESCRIBE = 4
 }
 
 /**
@@ -56,6 +58,7 @@ internal object SetupStep {
 internal fun SetupScreen(state: UiState, actions: AppActions) {
     val step = state.setupStep.coerceIn(SetupStep.WELCOME, SetupStep.DESCRIBE)
     BackHandler(enabled = step > SetupStep.WELCOME) { actions.setSetupStep(step - 1) }
+    if (step == SetupStep.VIDEO) { HowToStep { actions.setSetupStep(SetupStep.FOLDER) }; return }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding()
             .padding(horizontal = 20.dp).padding(top = 16.dp, bottom = 24.dp),
@@ -96,7 +99,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.Welcome(actions: AppA
     Spacer(Modifier.height(16.dp))
     KdsCallout("Your stickers and chats never leave this phone. The internet is used only to download the AI models.", CalloutTone.NEUTRAL)
     Spacer(Modifier.height(32.dp))
-    KdsButton("Get started", { actions.setSetupStep(SetupStep.FOLDER) }, size = ButtonSize.XL, block = true)
+    KdsButton("Get started", { actions.setSetupStep(SetupStep.VIDEO) }, size = ButtonSize.XL, block = true)
     Spacer(Modifier.height(4.dp))
     KdsButton("Later", actions.dismissSetup, variant = ButtonVariant.GHOST, block = true)
 }
