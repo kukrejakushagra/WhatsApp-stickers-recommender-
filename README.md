@@ -1,4 +1,4 @@
-# Sticker Search: AI search over your WhatsApp stickers (Android)
+# AI Sticker Search: search your WhatsApp stickers by meaning (Android)
 
 A native Android app (Kotlin + Jetpack Compose) that indexes the WhatsApp stickers already on your phone. It understands them with on-device AI and lets you search them by meaning, in English, Hindi or Hinglish, then send the one you pick through WhatsApp's own sticker picker. Everything runs on the phone, and the app has **no INTERNET permission**.
 
@@ -21,7 +21,7 @@ A native Android app (Kotlin + Jetpack Compose) that indexes the WhatsApp sticke
 | Related stickers (graph) | A local sticker graph with three link kinds: **story** (clips cut from one video, found when one clip's last keyframe matches the next one's first), **looks alike** (same character or art) and **topic** (a shared specific theme such as driving or cycling, confirmed by meaning). Search adds a "Related" section by expanding the top results through the graph; each sticker shows its story in order, its look-alikes and its topics |
 | One Stickers tab | Search and the library are one screen. With the search box empty you browse every sticker, newest first, with filters (Animated, Lottie, Described, Not described, Need a look) and a fast scroller; typing switches to search results. Every sticker tile has a **send button** (and long-press works too) that sends it in WhatsApp straight away; related stickers in a sticker's page send on long-press |
 | Corrections | Edit any description, emotions, intents or tags. Your edits are stored separately and always win over the AI, including after re-analysis |
-| Sending | Two dynamic "Sticker Search" packs (static and animated) served through WhatsApp's documented third-party sticker-pack provider. WhatsApp asks to add each pack once (or all at once with Settings › WhatsApp packs › **Quick send**); the app remembers WhatsApp's answer, so after that **Send in WhatsApp** puts the sticker first in the pack and takes you straight back to the chat you left, where you tap the sticker icon and send it as a real sticker. "Share as photo" is the fallback |
+| Sending | Two dynamic "AI Sticker Search" packs (static and animated) served through WhatsApp's documented third-party sticker-pack provider. WhatsApp asks to add each pack once (or all at once with Settings › WhatsApp packs › **Quick send**); the app remembers WhatsApp's answer, so after that **Send in WhatsApp** puts the sticker first in the pack and takes you straight back to the chat you left, where you tap the sticker icon and send it as a real sticker. "Share as photo" is the fallback |
 | Your own packs | On the Stickers tab, tap **Select**, pick up to 30 stickers (**Top 30** of the results, or **First 30** in the current filter when browsing), then **Create pack**. A mixed pick becomes a static pack and an animated pack, as WhatsApp requires, each with at least 3 stickers. WhatsApp's "Add" screen opens for each. From any sticker, **Add to pack** puts it in one of your packs. Settings › WhatsApp packs lets you rename packs, remove stickers, or delete a pack |
 | Background | Daily check while charging: scan, then visual pass, then annotation. Long runs show a progress notification (foreground media processing). **Pause** (Settings › AI, or the notification's "Pause describing") stops describing until **Resume**; nothing done is lost |
 
@@ -81,7 +81,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 2. **Settings › AI models:** import the four files. The visual pass starts on its own.
 3. **Settings › Battery optimisation:** tap **Allow**, and follow the tip shown for your phone's maker.
 4. Leave the phone **charging overnight**. Gemma describes stickers newest first, taking a few nights for about 5,000. **Start now** runs it immediately, on battery too.
-5. **Search:** type what you want to say. Open a result and tap **Send in WhatsApp**. The first time, WhatsApp asks you to add the "Sticker Search" pack. After that, the sticker is first in that pack in WhatsApp's picker.
+5. **Search:** type what you want to say. Open a result and tap **Send in WhatsApp**. The first time, WhatsApp asks you to add the "AI Sticker Search" pack. After that, the sticker is first in that pack in WhatsApp's picker.
 
 ## Known limitations
 

@@ -1,8 +1,8 @@
-# Sticker Search: Privacy Policy
+# AI Sticker Search: Privacy Policy
 
 _Last updated: 13 November 2026_
 
-Sticker Search ("the app", package `app.stickersearch`) helps you find and send the WhatsApp stickers already on your phone. This policy explains what the app does with your information. In short: **everything stays on your phone. The app has no internet access, collects nothing, and shares nothing.**
+AI Sticker Search ("the app", package `app.stickersearch`) helps you find and send the WhatsApp stickers already on your phone. This policy explains what the app does with your information. In short: **everything stays on your phone. The app has no internet access, collects nothing, and shares nothing.**
 
 ## What the app reads
 - **Sticker files in WhatsApp's media folder** (and WhatsApp Business's, if you choose). You pick the folder yourself through Android's folder picker, or grant "All files access" on Android 11+ (the storage permission on Android 9–10). The app reads only the folders whose names contain "Sticker" and skips everything else, including WhatsApp's backups.
@@ -41,4 +41,4 @@ If this policy changes, the new version will be published at this address with a
 ## Contact
 Questions: **[your contact email]**
 
-_Sticker Search is an independent app and is not affiliated with, endorsed by, or sponsored by WhatsApp LLC or Meta Platforms, Inc._
+_AI Sticker Search is an independent app and is not affiliated with, endorsed by, or sponsored by WhatsApp LLC or Meta Platforms, Inc._

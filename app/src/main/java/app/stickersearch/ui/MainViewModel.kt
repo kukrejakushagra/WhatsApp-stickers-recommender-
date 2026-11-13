@@ -824,7 +824,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------------- sending ----------------
 
-    /** Puts the sticker first in the Sticker Search pack and opens WhatsApp; the user sends it there. */
+    /** Puts the sticker first in the AI Sticker Search pack and opens WhatsApp; the user sends it there. */
     /**
      * [askToAdd] must launch WhatsApp's ENABLE_STICKER_PACK intent *for a result*: WhatsApp only shows its
      * "Add sticker pack" screen to a caller it can identify, and reports validation errors in the result.
@@ -981,7 +981,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             refreshPacks()
             if (todo.isEmpty()) {
                 return@launch toast(
-                    if (StickerPacks.Pack.builtIns.all { StickerPacks.isAdded(ctx, it) }) "Both Sticker Search packs are already in WhatsApp."
+                    if (StickerPacks.Pack.builtIns.all { StickerPacks.isAdded(ctx, it) }) "Both AI Sticker Search packs are already in WhatsApp."
                     else "There aren't enough stickers of each kind yet. Run a scan first.",
                 )
             }
@@ -1061,7 +1061,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     (resultCode == android.app.Activity.RESULT_OK || added) && pack?.custom == true ->
                         "“${pack.title}” is in WhatsApp's sticker picker."
                     resultCode == android.app.Activity.RESULT_OK || added ->
-                        "Pack added. In WhatsApp, open a chat and the sticker picker; your sticker is first in ${pack?.title ?: "Sticker Search"}."
+                        "Pack added. In WhatsApp, open a chat and the sticker picker; your sticker is first in ${pack?.title ?: "AI Sticker Search"}."
                     error != null -> "WhatsApp didn't add the pack: $error"
                     else -> "WhatsApp closed without adding the pack. Tap Send in WhatsApp to try again."
                 },

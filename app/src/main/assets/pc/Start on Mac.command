@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sticker Search: describes the stickers in this folder with a model on this Mac.
+# AI Sticker Search: describes the stickers in this folder with a model on this Mac.
 # Double-click to start. The first time, macOS may warn it's from an unidentified developer:
 # right-click this file, choose Open, then Open again.
 cd "$(dirname "$0")" || exit 1

@@ -153,7 +153,7 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 KdsSettingsRow(
                     title = "Quick send", icon = R.drawable.ic_kds_phone,
                     description = if (quickReady) "Set up. Send in WhatsApp goes straight back to your chat."
-                        else "Add both Sticker Search packs to WhatsApp once, so Send in WhatsApp never stops at WhatsApp's Add screen.",
+                        else "Add both AI Sticker Search packs to WhatsApp once, so Send in WhatsApp never stops at WhatsApp's Add screen.",
                     onClick = if (quickReady) null else actions.setUpQuickSend,
                     trailing = { if (quickReady) KdsBadge("Ready", BadgeTone.SOFT) else KdsButton("Set up", actions.setUpQuickSend, size = ButtonSize.SM) },
                 )

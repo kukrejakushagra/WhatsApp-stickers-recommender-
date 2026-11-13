@@ -1,7 +1,7 @@
 @echo off
-rem Sticker Search: describes the stickers in this folder with a model on this PC.
+rem AI Sticker Search: describes the stickers in this folder with a model on this PC.
 cd /d "%~dp0"
-title Sticker Search - describing stickers
+title AI Sticker Search - describing stickers
 where py >nul 2>nul
 if %errorlevel%==0 (
     py -3 describe.py %*

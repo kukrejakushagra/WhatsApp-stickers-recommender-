@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sticker Search: describe your stickers on a PC, then import the results on the phone.
+AI Sticker Search: describe your stickers on a PC, then import the results on the phone.
 
 Extract the export zip ("Extract All"), then in that folder either double-click
 "Start on Windows.bat", or run:
@@ -321,7 +321,7 @@ def save_settings(folder: str, settings: dict) -> None:
 def main(interactive: bool) -> None:
     global KEYS
     here = os.path.dirname(os.path.abspath(__file__))
-    p = argparse.ArgumentParser(description="Describe Sticker Search stickers with a local vision model.")
+    p = argparse.ArgumentParser(description="Describe AI Sticker Search stickers with a local vision model.")
     p.add_argument("export", nargs="?", default=here,
                    help="the extracted export folder (default: the folder this script is in), or the export zip")
     p.add_argument("--model", default=None, help=f"model name (default: the one chosen the first time; {MODELS[0][0]} or {MODELS[1][0]})")
@@ -572,7 +572,7 @@ def main(interactive: bool) -> None:
         return
     print(f"\nDone: {described:,} of {total:,} described"
           + (f", {failed} couldn't be read (start again to retry them)." if failed else "."))
-    print("Copy results.jsonl from this folder to your phone, then in Sticker Search open "
+    print("Copy results.jsonl from this folder to your phone, then in AI Sticker Search open "
           "Settings › Faster: describe on a PC › Import results.")
 
 

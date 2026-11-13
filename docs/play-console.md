@@ -12,18 +12,18 @@ STICKERSEARCH_KEYSTORE_PROPERTIES=/path/to/keystore.properties ./gradlew bundleR
 Upload `app/build/outputs/bundle/release/app-release.aab`. Each upload needs a higher `versionCode` in `app/build.gradle.kts`.
 
 ## 1. Create the app (personal account)
-1. Play Console › **Create app**. Name: **Sticker Search**. App, Free, then accept the declarations.
+1. Play Console › **Create app**. Name: **AI Sticker Search**. App, Free, then accept the declarations.
 2. **Testing › Closed testing › Create track**. Add at least **12 testers** (a Google Group or email list), upload the AAB, and roll out.
    - Personal accounts must keep **12+ testers opted in for 14 days in a row** before they can apply for production.
 3. Leave **Play App Signing** on (the default). Google keeps the app signing key, and this project's key is the upload key. If the upload key is ever lost, it can be reset in Play Console › Setup › App signing.
 
 ## 2. Store listing
-- **App name** (≤30): `Sticker Search`
+- **App name** (≤30): `AI Sticker Search` (17 characters)
   - Don't put "WhatsApp" in the name or icon: that breaks Google's impersonation and trademark policy.
 - **Short description** (≤80): `Find the right sticker by meaning, in English, Hindi or Hinglish. Offline.`
 - **Full description:**
 
-  > Sticker Search finds the perfect sticker from the ones already on your phone. Type what you want to say ("so done with work", "kya bakwas hai", "happy birthday") and it finds stickers that mean it, not just ones with matching words.
+  > AI Sticker Search finds the perfect sticker from the ones already on your phone. Type what you want to say ("so done with work", "kya bakwas hai", "happy birthday") and it finds stickers that mean it, not just ones with matching words.
   >
   > • Search by meaning in English, Hindi and Hinglish
   > • Finds animated and Lottie stickers too, and plays them like your chat app does
@@ -34,7 +34,7 @@ Upload `app/build/outputs/bundle/release/app-release.aab`. Each upload needs a h
   >
   > Private by design: everything runs on your phone. The app has no internet access, no ads, no tracking and no account. You import the AI models yourself; an optional script lets a PC describe your stickers faster.
   >
-  > Sticker Search is an independent app and is not affiliated with WhatsApp LLC or Meta.
+  > AI Sticker Search is an independent app and is not affiliated with WhatsApp LLC or Meta.
 
 - **Graphics:**
   - 512×512 icon.

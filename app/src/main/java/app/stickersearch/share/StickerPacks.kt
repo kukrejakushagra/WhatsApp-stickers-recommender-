@@ -33,11 +33,11 @@ import java.io.File
  */
 object StickerPacks {
 
-    /** A pack served to WhatsApp: the two built-in "Sticker Search" packs, or one the user made. */
+    /** A pack served to WhatsApp: the two built-in "AI Sticker Search" packs, or one the user made. */
     data class Pack(val id: String, val title: String, val animated: Boolean, val custom: Boolean = false) {
         companion object {
-            val STATIC = Pack("search_static", "Sticker Search", false)
-            val ANIMATED = Pack("search_animated", "Sticker Search · animated", true)
+            val STATIC = Pack("search_static", "AI Sticker Search", false)
+            val ANIMATED = Pack("search_animated", "AI Sticker Search · animated", true)
             val builtIns = listOf(STATIC, ANIMATED)
         }
     }
@@ -449,7 +449,7 @@ class StickerContentProvider : ContentProvider() {
         packs.forEach { p ->
             StickerPacks.ensureTrayForServing(ctx, p)
             addRow(arrayOf<Any>(
-                p.id, p.title, "Sticker Search", StickerPacks.trayName(p), "", "", "", "", "", "",
+                p.id, p.title, "AI Sticker Search", StickerPacks.trayName(p), "", "", "", "", "", "",
                 StickerPacks.version(ctx, p).toString(), 1, if (p.animated) 1 else 0,
             ))
         }

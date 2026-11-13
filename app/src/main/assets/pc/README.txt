@@ -1,4 +1,4 @@
-Sticker Search: describe your stickers on a PC
+AI Sticker Search: describe your stickers on a PC
 ==============================================
 
 This folder holds the stickers your phone hasn't described yet: one picture each (animated ones
