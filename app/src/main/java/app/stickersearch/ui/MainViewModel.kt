@@ -206,6 +206,8 @@ data class UiState(
     val setupDone: Boolean = true,
     val setupDismissed: Boolean = false,
     val setupStep: Int = 0,
+    /** Background battery status: Unrestricted, Optimised or Restricted. */
+    val battery: app.stickersearch.device.BatteryAccess.State = app.stickersearch.device.BatteryAccess.State(),
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -362,7 +364,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ---------------- permissions & scanning ----------------
 
     fun refreshPermissions() {
-        _state.update { it.copy(permissions = readPermissions(), eventCount = events.all().length(), batteryUnrestricted = batteryUnrestricted()) }
+        _state.update { it.copy(permissions = readPermissions(), eventCount = events.all().length(), batteryUnrestricted = batteryUnrestricted(), battery = app.stickersearch.device.BatteryAccess.read(ctx)) }
         refreshModels()
         viewModelScope.launch(Dispatchers.IO) { refreshPacks(); _state.update { it.copy(storage = storage()) } }
     }
@@ -1245,6 +1247,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.id to "${StickerPacks.entries(ctx, it).size} stickers, added=${StickerPacks.isAdded(ctx, it)}"
             } as Map<*, *>))
             .put("batteryUnrestricted", batteryUnrestricted())
+            .apply {
+                val b = app.stickersearch.device.BatteryAccess.read(ctx)
+                put("batteryLevel", app.stickersearch.device.BatteryAccess.level(b).name)
+                put("backgroundRestricted", b.backgroundRestricted)
+                put("standbyBucket", b.standbyBucket)
+            }
             .put("graph", JSONObject().apply {
                 db.graph().counts().forEach { put(it.type.name, it.n) }
                 put("buildMs", ctx.getSharedPreferences("graph", Context.MODE_PRIVATE).getLong("build_ms", 0))

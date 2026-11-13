@@ -6,5 +6,9 @@
   "45": {
     "en-GB": "• A dark app icon, to match the app\n• Lottie stickers now appear under Animated\n• Contact & feedback link in Settings\n\nAlso in 1.1: guided setup, search models that download by themselves and a calmer look.",
     "hi-IN": "• डार्क ऐप आइकन, ऐप के रूप से मेल खाता\n• Lottie स्टिकर अब Animated में दिखते हैं\n• सेटिंग्स में संपर्क और फ़ीडबैक लिंक\n\n1.1 में यह भी: आसान सेटअप, अपने-आप डाउनलोड होने वाले सर्च मॉडल और साफ़-सुथरा रूप।"
+  },
+  "46": {
+    "en-GB": "• Settings › Background now shows whether battery use is Unrestricted, with the exact steps for your phone and a button to the right screen\n\nAlso in 1.1: guided setup, search models that download by themselves, a dark icon and a calmer look.",
+    "hi-IN": "• सेटिंग्स › Background में अब दिखता है कि बैटरी का इस्तेमाल Unrestricted है या नहीं, आपके फ़ोन के लिए सही कदम और सही स्क्रीन खोलने का बटन\n\n1.1 में यह भी: आसान सेटअप, अपने-आप डाउनलोड होने वाले सर्च मॉडल, डार्क आइकन और साफ़-सुथरा रूप।"
   }
 }

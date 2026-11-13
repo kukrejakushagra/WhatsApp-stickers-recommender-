@@ -222,7 +222,8 @@ private fun Describe(state: UiState, actions: AppActions) {
         title = "On this phone", badge = if (state.phoneCanDescribe) null else "Not for this phone", tone = BadgeTone.WARNING,
         body = "Uses Gemma (3.1 GB). Sign-in needed: a free Hugging Face account. Sign in at huggingface.co, accept Google's " +
             "Gemma licence on the model's page, then download it in your browser and import it in Settings › AI models. " +
-            "It runs while charging; with thousands of stickers it can take several nights." +
+            "It runs while charging; with thousands of stickers it can take several nights, and the phone needs " +
+            "Unrestricted battery use (Settings \u203a Background)." +
             if (state.phoneCanDescribe) "" else " This phone has %.1f GB of memory, so it's likely to fail here.".format(state.memoryGb),
         action = "Get Gemma",
     ) { actions.finishSetupQuietly(); actions.openSettingsAt("models") }

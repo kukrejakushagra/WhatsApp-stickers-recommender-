@@ -248,15 +248,41 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 },
                 {
                     KdsSettingsRow(
-                        title = "Battery optimisation", icon = R.drawable.ic_kds_battery,
-                        description = (if (state.batteryUnrestricted) "Unrestricted, so long describing runs while charging aren't cut short. "
-                            else "Allow unrestricted use so describing, which can take several nights, isn't cut short. ") +
-                            app.stickersearch.device.DeviceCaps.batteryTip(android.os.Build.MANUFACTURER),
+                        title = "Skip battery optimisation", icon = R.drawable.ic_kds_battery,
+                        description = "Lets the app keep working while the phone sleeps. On its own this often isn't enough " +
+                            "for long describing runs; see Unrestricted battery use below.",
                         trailing = {
                             if (state.batteryUnrestricted) KdsBadge("Allowed", BadgeTone.SOFT)
                             else KdsButton("Allow", actions.openBatterySettings, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
                         },
                     )
+                },
+                {
+                    val level = app.stickersearch.device.BatteryAccess.level(state.battery)
+                    val steps = app.stickersearch.device.BatteryAccess.steps(android.os.Build.VERSION.SDK_INT, android.os.Build.MANUFACTURER)
+                    KdsSettingsRow(
+                        title = "Unrestricted battery use", icon = R.drawable.ic_kds_battery,
+                        description = when (level) {
+                            app.stickersearch.device.BatteryAccess.Level.UNRESTRICTED ->
+                                "Describing can run for hours while charging. If runs still stop: $steps"
+                            app.stickersearch.device.BatteryAccess.Level.RESTRICTED ->
+                                "Android is holding the app back in the background, so describing stops early. To fix it: $steps"
+                            else -> "Needed for describing to run for hours (with thousands of stickers it takes several nights). " +
+                                "Android doesn't let apps switch this on themselves; it takes a few taps: $steps"
+                        },
+                        trailing = {
+                            when (level) {
+                                app.stickersearch.device.BatteryAccess.Level.UNRESTRICTED -> KdsBadge("Unrestricted", BadgeTone.SOFT)
+                                app.stickersearch.device.BatteryAccess.Level.RESTRICTED -> KdsBadge("Restricted", BadgeTone.DANGER)
+                                else -> KdsBadge("Optimised", BadgeTone.WARNING)
+                            }
+                        },
+                    )
+                    if (level != app.stickersearch.device.BatteryAccess.Level.UNRESTRICTED) {
+                        Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 16.dp, bottom = 14.dp)) {
+                            KdsButton("Open app settings", actions.openAppSettings, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
+                        }
+                    }
                 },
             ))
 

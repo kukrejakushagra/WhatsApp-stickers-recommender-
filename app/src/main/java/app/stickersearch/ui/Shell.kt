@@ -107,6 +107,8 @@ data class AppActions(
     val dismissSetup: () -> Unit = {},
     val reopenSetup: () -> Unit = {},
     val openSettingsAt: (String) -> Unit = {},
+    /** App info, where the app's battery page (Unrestricted) is. */
+    val openAppSettings: () -> Unit = {},
 )
 
 @Composable
@@ -217,6 +219,7 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             dismissSetup = vm::dismissSetup,
             reopenSetup = vm::reopenSetup,
             openSettingsAt = vm::openSettingsAt,
+            openAppSettings = { app.stickersearch.device.BatteryAccess.openAppSettings(context) },
         )
     }
     AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)
