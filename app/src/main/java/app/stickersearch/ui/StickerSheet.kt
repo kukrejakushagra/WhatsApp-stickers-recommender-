@@ -121,6 +121,8 @@ internal fun StickerSheet(
     state: UiState,
     onOpen: (StickerRow) -> Unit,
     onSearch: (String) -> Unit = {},
+    /** Wide screens: shown as a panel beside the results instead of a bottom sheet. */
+    asPane: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     val message = state.message
@@ -138,7 +140,8 @@ internal fun StickerSheet(
     val a = details?.annotation
     val dims = if (s.width > 0) "${s.width}×${s.height} · " else ""
     val dur = s.durationMs?.takeIf { it > 0 }?.let { "%.1f s · ".format(it / 1000.0) } ?: ""
-    KdsSheet(
+    StickerFrame(
+        asPane = asPane,
         title = if (editing) "Edit description" else formatName(s),
         subtitle = if (editing) "Your changes are kept when stickers are analysed again" else "$dims$dur${"%,d".format(s.sizeBytes / 1024)} KB",
         onDismiss = onDismiss,
@@ -146,7 +149,7 @@ internal fun StickerSheet(
         header = if (editing) null else {
             {
                 Box(
-                    Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(18.dp)).background(Kds.colors.glassClear),
+                    Modifier.fillMaxWidth().height(if (Adaptive.short(screenHeightDp())) 120.dp else if (asPane) 240.dp else 180.dp).clip(RoundedCornerShape(18.dp)).background(Kds.colors.glassClear),
                     contentAlignment = Alignment.Center,
                 ) {
                     val uri = s.primaryUri?.let(Uri::parse)
@@ -176,7 +179,7 @@ internal fun StickerSheet(
     ) {
         if (editing) {
             EditForm(s.id, details, actions, onDone = { editing = false; reload++ })
-            return@KdsSheet
+            return@StickerFrame
         }
         if (a != null) {
             Text(a.description, style = Kds.type.body, color = Kds.colors.foreground)
@@ -377,4 +380,20 @@ private fun Keywords(a: app.stickersearch.ml.Annotation, onSearch: (String) -> U
             phrases.forEach { t -> KdsFilterChip(t, false, { onSearch(t) }) }
         }
     }
+}
+
+
+/** A bottom sheet on phones; a side panel on wide screens. Same title, header, body and footer. */
+@Composable
+private fun StickerFrame(
+    asPane: Boolean,
+    title: String,
+    subtitle: String?,
+    onDismiss: () -> Unit,
+    header: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)?,
+    footer: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)?,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    if (asPane) app.stickersearch.ui.kds.KdsPane(title, onDismiss, subtitle = subtitle, header = header, footer = footer, content = content)
+    else app.stickersearch.ui.kds.KdsSheet(title = title, onDismiss = onDismiss, subtitle = subtitle, header = header, footer = footer, content = content)
 }

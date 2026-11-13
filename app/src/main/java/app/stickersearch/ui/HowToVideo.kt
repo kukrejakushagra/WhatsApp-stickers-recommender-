@@ -36,17 +36,23 @@ import app.stickersearch.ui.kds.KdsButton
 import app.stickersearch.ui.kds.theme.Kds
 
 /**
- * The 26-second "how it works" video (res/raw/how_to.mp4, silent, captions drawn in). Plays once,
- * then [onEnded]; [play] changes restart it.
+ * The 8-second "type, see stickers, tap send" clip (silent, one caption). Portrait (res/raw/how_to)
+ * or landscape (res/raw/how_to_land), whichever fits the screen right now. Plays once, then
+ * [onEnded]; [play] changes restart it.
  */
 @Composable
 internal fun HowToVideoPlayer(modifier: Modifier = Modifier, play: Int = 0, onEnded: () -> Unit = {}) {
     var view by remember { mutableStateOf<VideoView?>(null) }
+    val land = isLandscape()
+    // The clip's own background, so any space around it on odd screen shapes blends in.
+    Box(modifier.background(androidx.compose.ui.graphics.Color(0xFF09090B), androidx.compose.foundation.shape.RoundedCornerShape(18.dp)),
+        contentAlignment = Alignment.Center) {
+    androidx.compose.runtime.key(land) {
     AndroidView(
-        modifier = modifier,
+        modifier = Modifier.aspectRatio(if (land) 16f / 9f else 9f / 16f, matchHeightConstraintsFirst = !land),
         factory = { ctx ->
             VideoView(ctx).apply {
-                setVideoURI(Uri.parse("android.resource://${ctx.packageName}/${R.raw.how_to}"))
+                setVideoURI(Uri.parse("android.resource://${ctx.packageName}/${if (land) R.raw.how_to_land else R.raw.how_to}"))
                 setOnPreparedListener { mp -> mp.setVolume(0f, 0f); start() }
                 setOnCompletionListener { onEnded() }
                 // A video that can't play (rare codecs) must never block the setup.
@@ -56,6 +62,8 @@ internal fun HowToVideoPlayer(modifier: Modifier = Modifier, play: Int = 0, onEn
         },
         update = { v -> if (play > 0 && !v.isPlaying) { v.seekTo(0); v.start() } },
     )
+    }
+    }
     DisposableEffect(Unit) { onDispose { view?.stopPlayback() } }
 }
 
@@ -70,7 +78,7 @@ internal fun HowToStep(onContinue: () -> Unit) {
             if (!ended) KdsButton("Skip", onContinue, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
         }
         Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-            HowToVideoPlayer(Modifier.aspectRatio(9f / 16f, matchHeightConstraintsFirst = true), replay) { ended = true }
+            HowToVideoPlayer(Modifier.fillMaxSize(), replay) { ended = true }
         }
         KdsButton("Continue", onContinue, size = ButtonSize.XL, block = true,
             variant = if (ended) ButtonVariant.PRIMARY else ButtonVariant.OUTLINE)
@@ -90,7 +98,7 @@ internal fun HowToDialog(onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                HowToVideoPlayer(Modifier.aspectRatio(9f / 16f, matchHeightConstraintsFirst = true))
+                HowToVideoPlayer(Modifier.fillMaxSize())
             }
             KdsButton("Close", onDismiss, variant = ButtonVariant.OUTLINE, block = true)
         }

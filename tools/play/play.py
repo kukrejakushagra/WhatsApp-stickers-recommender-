@@ -143,6 +143,8 @@ def do_images(play: Play):
         "icon": [STORE / "icon.png"],
         "featureGraphic": [STORE / "feature-graphic.png"],
         "phoneScreenshots": sorted((STORE / "screenshots").glob("phone-*.png")),
+        "sevenInchScreenshots": sorted((STORE / "tablet7").glob("*.png")),
+        "tenInchScreenshots": sorted((STORE / "tablet10").glob("*.png")),
     }
     for kind, files in sets.items():
         files = [f for f in files if f.exists()]

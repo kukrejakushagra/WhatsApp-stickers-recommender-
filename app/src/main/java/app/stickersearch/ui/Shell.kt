@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -266,10 +269,11 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
             tab = Tab.SETTINGS.ordinal
         }
     }
+    val twoPane = Adaptive.twoPane(screenWidthDp())
     // First run: the guided setup takes the whole screen until it's finished or put off.
     if (!state.setupDone && !state.setupDismissed) {
         KdsGround(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().statusBarsPadding()) { SetupScreen(state, actions) }
+            Box(Modifier.fillMaxSize().statusBarsPadding()) { CenteredColumn(Adaptive.SetupMaxWidth) { SetupScreen(state, actions) } }
             KdsToastHost(state.message, actions.messageShown,
                 Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 12.dp))
         }
@@ -278,8 +282,29 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
     KdsGround(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().statusBarsPadding()) {
             when (Tab.entries.getOrElse(tab) { Tab.SEARCH }) {
-                Tab.SEARCH -> SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
-                Tab.SETTINGS -> SettingsScreen(state, actions)
+                Tab.SEARCH -> if (twoPane) {
+                    // Wide screens: results on the left, the chosen sticker's details on the right.
+                    Row(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(0.58f).fillMaxHeight()) {
+                            SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
+                        }
+                        Box(Modifier.weight(0.42f).fillMaxHeight().padding(top = 12.dp, end = 16.dp, bottom = BottomClearance)) {
+                            val s = selected
+                            if (s != null) {
+                                val live = state.stickers.firstOrNull { it.id == s.id } ?: s
+                                StickerSheet(live, actions, state, onOpen = { selected = it }, onSearch = { q ->
+                                    actions.stopSelecting(); actions.useRecent(q)
+                                }, asPane = true) { selected = null }
+                            } else {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    app.stickersearch.ui.kds.KdsEmptyState(R.drawable.ic_kds_image, "Pick a sticker",
+                                        "Tap any sticker to see what it says, its keywords and look-alikes, and send it from here.")
+                                }
+                            }
+                        }
+                    }
+                } else SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
+                Tab.SETTINGS -> CenteredColumn { SettingsScreen(state, actions) }
             }
         }
         // While the keyboard is up, the tab bar steps aside (it would sit right on top of the keyboard)
@@ -297,11 +322,11 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
                 ),
                 selected = tab,
                 onSelect = { if (it != tab && state.selecting) actions.stopSelecting(); keyboard?.hide(); tab = it },
-                modifier = Modifier.navigationBarsPadding(),
+                modifier = Modifier.navigationBarsPadding().widthIn(max = Adaptive.NavMaxWidth),
             )
         }
     }
-    selected?.let { s ->
+    if (!twoPane || tab != Tab.SEARCH.ordinal) selected?.let { s ->
         // Keep the sheet in step with the live row (status, thumbnail) while it's open.
         val live = state.stickers.firstOrNull { it.id == s.id } ?: s
         StickerSheet(live, actions, state, onOpen = { selected = it }, onSearch = { q ->

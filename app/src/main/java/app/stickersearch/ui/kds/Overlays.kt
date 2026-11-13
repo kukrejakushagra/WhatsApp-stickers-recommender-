@@ -37,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -132,6 +134,41 @@ fun KdsSheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 content = footer,
             )
+        }
+    }
+}
+
+/**
+ * The same content as [KdsSheet], as a panel beside other content (wide screens): title row with a
+ * close button, an optional pinned header, a scrolling body and a footer kept in view.
+ */
+@Composable
+fun KdsPane(
+    title: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    header: (@Composable ColumnScope.() -> Unit)? = null,
+    footer: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val c = Kds.colors
+    val shape = RoundedCornerShape(KdsRadius.x2l)
+    Column(modifier.fillMaxSize().glass(Glass.FLOATING, shape, elevation = 4.dp).clip(shape)) {
+        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp).padding(top = 16.dp)) {
+            androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = Kds.type.heading, color = c.foreground)
+                    subtitle?.let { Text(it, style = Kds.type.caption, color = c.mutedForeground) }
+                }
+                KdsIconButton(app.stickersearch.R.drawable.ic_kds_x, "Close", onDismiss)
+            }
+            header?.let { Column(Modifier.fillMaxWidth().padding(top = 12.dp), content = it) }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp), content = content)
+        }
+        if (footer != null) {
+            HorizontalDivider(thickness = 1.dp, color = c.border)
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = footer)
         }
     }
 }

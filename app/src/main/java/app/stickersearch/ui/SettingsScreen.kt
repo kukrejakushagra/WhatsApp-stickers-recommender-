@@ -345,7 +345,7 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 {
                     KdsSettingsRow(
                         title = "How to use", icon = R.drawable.ic_kds_play,
-                        description = "A 25-second video: type what you mean, tap the green button to send, tap a sticker to see more.",
+                        description = "An 8-second clip: type what you mean, see the stickers, tap the green button to send.",
                         onClick = { howTo = true },
                     )
                 },
