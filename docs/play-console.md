@@ -3,7 +3,7 @@
 Package: **`app.stickersearch`** (permanent once uploaded) · version 1.0.0 (versionCode 41) · min Android 9 · arm64 · Play App Signing.
 
 ## 0. Build the bundle
-The upload key lives outside the repo. Point the build at its properties file (or copy it to `keystore.properties` in the project root, which git ignores):
+Create your own upload key first (README › Release signing). It lives outside the repo. Point the build at its properties file (or copy it to `keystore.properties` in the project root, which git ignores):
 
 ```bash
 STICKERSEARCH_KEYSTORE_PROPERTIES=/path/to/keystore.properties ./gradlew bundleRelease
@@ -41,7 +41,7 @@ Upload `app/build/outputs/bundle/release/app-release.aab`. Each upload needs a h
   - 1024×500 feature graphic.
   - At least 2 phone screenshots (Stickers tab, a sticker's page, Settings).
 - **Category:** Tools (or Communication). Contact email: yours.
-- **Privacy policy URL:** the public link to [`docs/privacy-policy.md`](privacy-policy.md) in this repo. Fill in the contact email first; it must be reachable without signing in.
+- **Privacy policy URL:** a public link to your privacy policy (for example a published Google Doc, or [`docs/privacy-policy.md`](privacy-policy.md) here). It must name a contact and be reachable without signing in.
 
 ## 3. App content (Policy › App content)
 - **Ads:** No.
@@ -81,8 +81,8 @@ If Google refuses this, switch the Settings button to open the system battery-op
 - [ ] Release notes.
 - [ ] Closed test → (after 14 days, 12 testers) apply for production.
 
-## Moving from the sideloaded build
-The Play app (`app.stickersearch`) is a different app from the old sideloaded `com.kukreja.stickersearch`. Both can be installed side by side. To carry the work over:
+## Moving from an earlier sideloaded build
+A build with a different package name is a separate app; both can be installed side by side. To carry the work over:
 1. In the old app: **Settings › Faster: describe on a PC › Share descriptions**.
-2. In the Play app: import the models, pick the folder, scan, then **Import results** with that file.
+2. In the new app: import the models, pick the folder, scan, then **Import results** with that file.
 3. Uninstall the old app.
