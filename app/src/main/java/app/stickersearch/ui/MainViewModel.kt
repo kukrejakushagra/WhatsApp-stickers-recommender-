@@ -109,7 +109,18 @@ data class ModelsState(
     val importing: String? = null,
     /** The row whose Import button started the current import, if any. */
     val importingKind: ModelKind? = null,
+    /** In-app download of the search models: running (or waiting for a network), with progress. */
+    val downloading: Boolean = false,
+    val downloadText: String? = null,
+    val downloadFraction: Float? = null,
+    /** Bytes so far for the model being downloaded right now. */
+    val downloadKind: ModelKind? = null,
+    val downloadError: String? = null,
+    /** Downloads wait for Wi-Fi unless the user allowed mobile data. */
+    val wifiOnly: Boolean = true,
 ) {
+    /** The search models (everything except Gemma), which the app can download itself. */
+    val searchModelsReady get() = has(ModelKind.E5) && has(ModelKind.SIGLIP_VISION) && has(ModelKind.SIGLIP_TEXT)
     val readyCount get() = ModelKind.entries.count { has(it) }
     fun has(k: ModelKind) = (present[k] ?: 0L) > 0L
     val searchReady get() = has(ModelKind.E5) || has(ModelKind.SIGLIP_TEXT)
@@ -191,6 +202,10 @@ data class UiState(
     val memoryGb: Double = 0.0,
     val phoneCanDescribe: Boolean = true,
     val describeAnyway: Boolean = false,
+    /** First-run guided setup: finished, put off for now ("Later"), and the step to resume at. */
+    val setupDone: Boolean = true,
+    val setupDismissed: Boolean = false,
+    val setupStep: Int = 0,
 ) {
     val indexedCount get() = statusCounts.filterKeys { it != StickerStatus.MISSING }.values.sum()
     val failedCount get() = statusCounts[StickerStatus.FAILED] ?: 0
@@ -284,6 +299,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch(Dispatchers.Default) { engine.warmUp() }
         observePcExport()
+        observeModelDownload()
+        loadSetup()
         // If the application died inside Gemma (describing or suggesting replies), record it now.
         viewModelScope.launch(Dispatchers.IO) {
             app.stickersearch.ml.DescribeGuard.takeUnfinishedEmbed(ctx)?.let { id ->
@@ -426,6 +443,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 },
             )
             if (ok.isNotEmpty()) AiWorker.enqueue(ctx, manual = false)
+        }
+    }
+
+    // ---------------- model downloads ----------------
+
+    /** Starts (or restarts) downloading the search models. The user agreed to it on the screen that calls this. */
+    fun downloadModels() {
+        _state.update { it.copy(models = it.models.copy(downloading = true, downloadError = null, downloadText = "Starting")) }
+        app.stickersearch.index.ModelDownloadWorker.enqueue(ctx, _state.value.models.wifiOnly)
+    }
+
+    fun cancelModelDownload() {
+        app.stickersearch.index.ModelDownloadWorker.cancel(ctx)
+        _state.update { it.copy(models = it.models.copy(downloading = false, downloadText = null, downloadFraction = null, downloadKind = null)) }
+    }
+
+    fun setWifiOnly(on: Boolean) {
+        uiPrefs.edit().putBoolean("wifi_only", on).apply()
+        _state.update { it.copy(models = it.models.copy(wifiOnly = on)) }
+        // A running download picks up the new rule straight away; nothing downloaded so far is lost.
+        if (_state.value.models.downloading) app.stickersearch.index.ModelDownloadWorker.enqueue(ctx, on)
+    }
+
+    private fun observeModelDownload() {
+        _state.update { it.copy(models = it.models.copy(wifiOnly = uiPrefs.getBoolean("wifi_only", true))) }
+        val W = app.stickersearch.index.ModelDownloadWorker
+        viewModelScope.launch {
+            androidx.work.WorkManager.getInstance(ctx).getWorkInfosForUniqueWorkFlow(W.UNIQUE).collect { infos ->
+                val w = infos.lastOrNull() ?: return@collect
+                when (w.state) {
+                    androidx.work.WorkInfo.State.RUNNING -> {
+                        val d = w.progress.getInt(W.KEY_DONE_MB, 0); val t = w.progress.getInt(W.KEY_TOTAL_MB, 0)
+                        val kind = w.progress.getString(W.KEY_KIND)?.let { runCatching { ModelKind.valueOf(it) }.getOrNull() }
+                        _state.update { it.copy(models = it.models.copy(
+                            downloading = true, downloadError = null, downloadKind = kind,
+                            downloadText = if (t > 0) "%,d of %,d MB".format(d, t) else "Starting",
+                            downloadFraction = if (t > 0) d.toFloat() / t else null,
+                        )) }
+                        refreshModels()
+                    }
+                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED ->
+                        _state.update { it.copy(models = it.models.copy(
+                            downloading = true, downloadKind = null,
+                            downloadText = if (it.models.wifiOnly) "Waiting for Wi-Fi" else "Waiting for a connection",
+                        )) }
+                    androidx.work.WorkInfo.State.SUCCEEDED -> {
+                        _state.update { it.copy(models = it.models.copy(downloading = false, downloadText = null, downloadFraction = null, downloadKind = null)) }
+                        refreshModels()
+                        _state.update { it.copy(storage = storage()) }
+                        withContext(Dispatchers.Default) { engine.close(); engine.warmUp() }
+                        val id = w.id.toString()
+                        if (uiPrefs.getString("download_seen", null) != id) {
+                            uiPrefs.edit().putString("download_seen", id).apply()
+                            toast("Search models are ready. Search by meaning and by look works now.")
+                        }
+                    }
+                    androidx.work.WorkInfo.State.FAILED -> _state.update { it.copy(models = it.models.copy(
+                        downloading = false, downloadText = null, downloadFraction = null, downloadKind = null,
+                        downloadError = w.outputData.getString(W.KEY_ERROR) ?: "The download didn't finish.",
+                    )) }
+                    androidx.work.WorkInfo.State.CANCELLED -> _state.update { it.copy(models = it.models.copy(
+                        downloading = false, downloadText = null, downloadFraction = null, downloadKind = null)) }
+                }
+            }
         }
     }
 
@@ -1237,6 +1318,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun consumeOpenSettings() = _state.update { it.copy(openSettingsAt = null) }
+
+    /** Opens Settings at a panel ("status", "pc" or "models"). */
+    fun openSettingsAt(target: String) = _state.update { it.copy(openSettingsAt = target) }
+
+    // ---------------- first-run setup ----------------
+
+    private fun loadSetup() {
+        // Someone updating from a version without the setup, who already has the search models, skips it.
+        val done = if (uiPrefs.contains("setup_done")) uiPrefs.getBoolean("setup_done", false)
+            else ModelStore(ctx).let { m -> m.autoDownload.all { m.has(it) } }
+        _state.update { it.copy(setupDone = done, setupDismissed = uiPrefs.getBoolean("setup_dismissed", false),
+            setupStep = uiPrefs.getInt("setup_step", 0)) }
+    }
+
+    fun setSetupStep(step: Int) {
+        uiPrefs.edit().putInt("setup_step", step).apply()
+        _state.update { it.copy(setupStep = step) }
+    }
+
+    fun finishSetup(toast: String? = "Set up. Tap the green button on a sticker to send it in WhatsApp.") {
+        uiPrefs.edit().putBoolean("setup_done", true).putBoolean("setup_dismissed", false).apply()
+        _state.update { it.copy(setupDone = true, setupDismissed = false, openSearch = toast != null) }
+        toast?.let { toast(it) }
+    }
+
+    /** "Later": the app opens normally; Settings keeps a Finish setup card. */
+    fun dismissSetup() {
+        uiPrefs.edit().putBoolean("setup_dismissed", true).apply()
+        _state.update { it.copy(setupDismissed = true) }
+    }
+
+    fun reopenSetup() {
+        uiPrefs.edit().putBoolean("setup_dismissed", false).apply()
+        _state.update { it.copy(setupDismissed = false) }
+    }
 
     fun handleShareIntent(intent: Intent?) {
         if (intent == null || (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE)) return

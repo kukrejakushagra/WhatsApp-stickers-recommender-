@@ -55,7 +55,8 @@ enum class ModelKind(
 
 /**
  * Model files live in app-specific external storage (no permission needed, removed with the app).
- * They are imported from files the user downloaded, through the system file picker.
+ * They're downloaded by the app (the three search models, see ModelDownloadWorker), or imported
+ * from files the user downloaded, through the system file picker.
  */
 class ModelStore(private val context: Context) {
 
@@ -100,6 +101,20 @@ class ModelStore(private val context: Context) {
             tmp.delete()
             return ImportResult(null, name, "${e.javaClass.simpleName}: ${e.message}")
         }
+    }
+
+    /** The ungated models the app downloads by itself (search by meaning and by look). */
+    val autoDownload = listOf(ModelKind.E5, ModelKind.SIGLIP_VISION, ModelKind.SIGLIP_TEXT)
+
+    fun partFile(kind: ModelKind) = File(dir, kind.fileName + ".part")
+
+    /** Moves a finished download into place if it really is [kind]; deletes it otherwise. */
+    fun installDownloaded(kind: ModelKind, f: File): Boolean {
+        if (identify(kind.downloadName, f) != kind) { f.delete(); return false }
+        val dest = file(kind)
+        dest.delete()
+        if (!f.renameTo(dest)) { f.copyTo(dest, overwrite = true); f.delete() }
+        return true
     }
 
     /** Name first, then the ONNX inputs, so a renamed download is still recognised. */

@@ -47,6 +47,10 @@ import app.stickersearch.ui.kds.KdsSettingsGroup
 import app.stickersearch.ui.kds.KdsSettingsRow
 import app.stickersearch.ui.kds.theme.Kds
 
+internal const val PRIVACY_URL = "https://docs.google.com/document/d/15o4XnHJmeKDzgcoiLK6-bxirFbYaJd2OXg11Xv62fKQ/pub"
+internal const val TERMS_URL = "https://docs.google.com/document/d/1H2AihW7UtNvx2j7c9iSAPB-KGxVeShq28_hYwUNN8p4/pub"
+internal const val SOURCE_URL = "https://github.com/kukrejakushagra/whatsapp-stickers-recommender-"
+
 private fun mb(bytes: Long) = when {
     bytes >= 1L shl 30 -> "%.1f GB".format(bytes / 1073741824.0)
     else -> "%,d MB".format(bytes shr 20)
@@ -71,11 +75,36 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
         actions.settingsOpened()
     }
     val pickedStickersOnly = p.safHeld && p.safTreeId?.endsWith("WhatsApp Stickers") == true
+    val modelsPanel = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    androidx.compose.runtime.LaunchedEffect(state.openSettingsAt) {
+        if (state.openSettingsAt == "models") { modelsPanel.bringIntoView(); actions.settingsOpened() }
+    }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         KdsAppBar("Settings")
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = BottomClearance), verticalArrangement = Arrangement.spacedBy(20.dp)) {
 
-            // ---- Library ----
+            // ---- 1. Finish setup (only while it isn't done) ----
+            if (!state.setupDone) {
+                app.stickersearch.ui.kds.KdsPanel {
+                    Text("Finish setup", style = Kds.type.heading, color = Kds.colors.foreground)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        listOfNotNull(
+                            "pick WhatsApp's folder".takeIf { !p.safHeld && !p.allFiles },
+                            "get the search models".takeIf { !state.models.searchModelsReady },
+                        ).joinToString(" and ").replaceFirstChar { it.uppercase() }.ifBlank { "Choose how to describe your stickers" } + ".",
+                        style = Kds.type.caption, color = Kds.colors.mutedForeground,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    KdsButton("Continue setup", actions.reopenSetup, block = true)
+                }
+            }
+
+            // ---- 2. Your stickers ----
+            Box(Modifier.bringIntoViewRequester(statusPanel)) { StatusPanel(state, actions) }
+
+            // ---- 3. Sticker access ----
             KdsSettingsGroup("Sticker access", listOf<@Composable () -> Unit>(
                 {
                     KdsSettingsRow(
@@ -90,7 +119,7 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                         },
                     )
                 },
-            ) + (if (p.businessTree != null || app.stickersearch.share.StickerPacks.WHATSAPP_BUSINESS in p.whatsApps) listOf<@Composable () -> Unit>({
+            ) + (if (StickerPacks.BUSINESS_ENABLED && (p.businessTree != null || StickerPacks.WHATSAPP_BUSINESS in p.whatsApps)) listOf<@Composable () -> Unit>({
                 KdsSettingsRow(
                     title = "WhatsApp Business folder", icon = R.drawable.ic_kds_folder,
                     description = if (p.businessHeld) p.businessTree?.let { android.provider.DocumentsContract.getTreeDocumentId(it) }
@@ -119,28 +148,33 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 KdsCallout("You picked WhatsApp Stickers only, so the stickers in Backup Excluded Stickers are missed. Pick Media instead.",
                     CalloutTone.WARNING, title = "One folder is missing")
             }
-            Box(Modifier.bringIntoViewRequester(statusPanel)) { StatusPanel(state, actions) }
 
-            // ---- AI ----
-            ModelsGroup(state, actions) { kind -> confirm = "model:${kind.name}" }
+            // ---- 4. AI models, 5. Describe on a PC ----
+            Box(Modifier.bringIntoViewRequester(modelsPanel)) { ModelsGroup(state, actions) { kind -> confirm = "model:${kind.name}" } }
             Box(Modifier.bringIntoViewRequester(pcPanel)) { PcPanel(state, actions) }
 
-            // ---- WhatsApp ----
+            // ---- 6. WhatsApp ----
             val quickReady = state.packs.filter { !it.pack.custom }.all { it.added }
-            KdsSettingsGroup("WhatsApp packs", (if (p.whatsApps.size > 1) listOf<@Composable () -> Unit>({
+            KdsSettingsGroup("WhatsApp", (if (p.whatsApps.size > 1) listOf<@Composable () -> Unit>({
                 KdsSettingsRow(
                     title = "Send with", icon = R.drawable.ic_kds_phone,
                     description = "Both WhatsApp and WhatsApp Business are installed. Stickers go to the one chosen here.",
                     trailing = {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            KdsFilterChip("WhatsApp", p.sendWith == app.stickersearch.share.StickerPacks.WHATSAPP,
-                                { actions.setSendWith(app.stickersearch.share.StickerPacks.WHATSAPP) })
-                            KdsFilterChip("Business", p.sendWith == app.stickersearch.share.StickerPacks.WHATSAPP_BUSINESS,
-                                { actions.setSendWith(app.stickersearch.share.StickerPacks.WHATSAPP_BUSINESS) })
+                            KdsFilterChip("WhatsApp", p.sendWith == StickerPacks.WHATSAPP, { actions.setSendWith(StickerPacks.WHATSAPP) })
+                            KdsFilterChip("Business", p.sendWith == StickerPacks.WHATSAPP_BUSINESS, { actions.setSendWith(StickerPacks.WHATSAPP_BUSINESS) })
                         }
                     },
                 )
             }) else emptyList()) + listOf<@Composable () -> Unit>({
+                KdsSettingsRow(
+                    title = "Quick send", icon = R.drawable.ic_kds_phone,
+                    description = if (quickReady) "Set up. Send in WhatsApp goes straight back to your chat."
+                        else "Add both AI Sticker Search packs to WhatsApp once, so Send in WhatsApp never stops at WhatsApp's Add screen.",
+                    onClick = if (quickReady) null else actions.setUpQuickSend,
+                    trailing = { if (quickReady) KdsBadge("Ready", BadgeTone.SOFT) else KdsButton("Set up", actions.setUpQuickSend, size = ButtonSize.SM) },
+                )
+            }, {
                 KdsSettingsRow(
                     title = "Refresh pack on every send", icon = R.drawable.ic_kds_refresh,
                     description = "Shows WhatsApp's pack screen before each send, which makes WhatsApp re-read the pack so the new " +
@@ -148,14 +182,6 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                     trailing = {
                         KdsFilterChip(if (state.alwaysRefresh) "On" else "Off", state.alwaysRefresh, { actions.setAlwaysRefresh(!state.alwaysRefresh) })
                     },
-                )
-            }, {
-                KdsSettingsRow(
-                    title = "Quick send", icon = R.drawable.ic_kds_phone,
-                    description = if (quickReady) "Set up. Send in WhatsApp goes straight back to your chat."
-                        else "Add both AI Sticker Search packs to WhatsApp once, so Send in WhatsApp never stops at WhatsApp's Add screen.",
-                    onClick = if (quickReady) null else actions.setUpQuickSend,
-                    trailing = { if (quickReady) KdsBadge("Ready", BadgeTone.SOFT) else KdsButton("Set up", actions.setUpQuickSend, size = ButtonSize.SM) },
                 )
             }) + state.packs.map { info ->
                 {
@@ -177,20 +203,9 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
             KdsInfo("Make your own pack", "On the Stickers tab, tap Select, pick up to ${StickerPacks.MAX} stickers, then Create pack.",
                 style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(horizontal = 4.dp))
 
-            // ---- Background ----
-            val ctx = androidx.compose.ui.platform.LocalContext.current
+            // ---- 7. Appearance ----
             val still = remember { systemWantsStill(ctx) }
             KdsSettingsGroup("Appearance", listOf(
-                {
-                    KdsSettingsRow(
-                        title = "Animate stickers in the grid", icon = R.drawable.ic_kds_play,
-                        description = if (still) "Paused while Battery Saver or \u201cRemove animations\u201d is on. " +
-                            "Animated stickers on screen play twice, like in WhatsApp, then stop until you scroll away and back."
-                        else "Animated stickers on screen play twice, like in WhatsApp, then stop until you scroll away and back. " +
-                            "Paused automatically in Battery Saver.",
-                        trailing = { KdsFilterChip(if (state.animateGrid) "On" else "Off", state.animateGrid, { actions.setAnimateGrid(!state.animateGrid) }) },
-                    )
-                },
                 {
                     KdsSettingsRow(
                         title = "Theme", icon = R.drawable.ic_kds_sliders,
@@ -209,8 +224,19 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                         }
                     }
                 },
+                {
+                    KdsSettingsRow(
+                        title = "Animate stickers in the grid", icon = R.drawable.ic_kds_play,
+                        description = if (still) "Paused while Battery Saver or \u201cRemove animations\u201d is on. " +
+                            "Animated stickers on screen play twice, like in WhatsApp, then stop until you scroll away and back."
+                        else "Animated stickers on screen play twice, like in WhatsApp, then stop until you scroll away and back. " +
+                            "Paused automatically in Battery Saver.",
+                        trailing = { KdsFilterChip(if (state.animateGrid) "On" else "Off", state.animateGrid, { actions.setAnimateGrid(!state.animateGrid) }) },
+                    )
+                },
             ))
 
+            // ---- 8. Background ----
             KdsSettingsGroup("Background", listOf(
                 {
                     KdsSettingsRow(
@@ -222,8 +248,8 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 {
                     KdsSettingsRow(
                         title = "Battery optimisation", icon = R.drawable.ic_kds_battery,
-                        description = (if (state.batteryUnrestricted) "Unrestricted, so overnight runs aren't cut short. "
-                            else "Allow unrestricted use so overnight runs finish. ") +
+                        description = (if (state.batteryUnrestricted) "Unrestricted, so long describing runs while charging aren't cut short. "
+                            else "Allow unrestricted use so describing, which can take several nights, isn't cut short. ") +
                             app.stickersearch.device.DeviceCaps.batteryTip(android.os.Build.MANUFACTURER),
                         trailing = {
                             if (state.batteryUnrestricted) KdsBadge("Allowed", BadgeTone.SOFT)
@@ -233,13 +259,24 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 },
             ))
 
-            // ---- Data ----
-            KdsSettingsGroup("Data", listOf(
+            // ---- 9. Data & privacy ----
+            KdsSettingsGroup("Data & privacy", listOf(
                 {
                     KdsSettingsRow(
                         title = "Storage used", icon = R.drawable.ic_kds_file,
-                        description = "Models ${mb(state.storage.models)} · previews ${mb(state.storage.previews)} · index ${mb(state.storage.database)}",
+                        description = "Models ${mb(state.storage.models)} · previews ${mb(state.storage.previews)} · index ${mb(state.storage.database)}. " +
+                            "Uninstalling the app removes all of it.",
                     )
+                },
+                {
+                    KdsSettingsRow(
+                        title = "Privacy policy", icon = R.drawable.ic_kds_lock,
+                        description = "Stickers, chats and descriptions stay on this phone. The internet is used only to download the AI models.",
+                        onClick = { actions.openUrl(PRIVACY_URL) },
+                    )
+                },
+                {
+                    KdsSettingsRow(title = "Terms of use", icon = R.drawable.ic_kds_file, onClick = { actions.openUrl(TERMS_URL) })
                 },
                 {
                     KdsSettingsRow(
@@ -250,8 +287,8 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 },
             ))
 
-            // ---- Diagnostics ----
-            KdsSettingsGroup("Diagnostics", listOf(
+            // ---- 10. Help & diagnostics ----
+            KdsSettingsGroup("Help & diagnostics", listOf(
                 {
                     KdsSettingsRow(
                         title = "Report", icon = R.drawable.ic_kds_copy,
@@ -275,6 +312,20 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                 {
                     KdsSettingsRow(title = if (showReport) "Hide report" else "Show report", icon = R.drawable.ic_kds_file,
                         onClick = { showReport = !showReport })
+                },
+                {
+                    KdsSettingsRow(
+                        title = "Open-source licences", icon = R.drawable.ic_kds_file,
+                        description = "AI Sticker Search is open source (MIT). It uses ONNX Runtime (MIT), MediaPipe (Apache 2.0), " +
+                            "Lottie (Apache 2.0), AndroidX (Apache 2.0) and the Geist font (SIL OFL). Models: multilingual-e5-small (MIT), " +
+                            "SigLIP2 (Apache 2.0), Gemma (Gemma Terms of Use).",
+                        onClick = { actions.openUrl(SOURCE_URL) },
+                    )
+                },
+                {
+                    KdsSettingsRow(title = "Version", icon = R.drawable.ic_kds_spark, trailing = {
+                        Text(remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull().orEmpty() }, style = Kds.type.caption, color = Kds.colors.mutedForeground)
+                    })
                 },
             ))
             if (showReport) {
@@ -308,20 +359,43 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
 private fun ModelsGroup(state: UiState, actions: AppActions, onRemove: (ModelKind) -> Unit) {
     val m = state.models
     val ready = m.readyCount
+    var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Everything ready: one line, details on demand.
+        if (ready == ModelKind.entries.size && !expanded) {
+            KdsSettingsGroup("AI models", listOf({
+                KdsSettingsRow(
+                    title = "All 4 models ready", icon = R.drawable.ic_kds_check_circle,
+                    description = "Search by meaning and by look, and Gemma for describing · ${mb(m.present.values.sum())}",
+                    onClick = { expanded = true },
+                )
+            }))
+            return@Column
+        }
         KdsSettingsGroup(
             if (ready == ModelKind.entries.size) "AI models · all ready" else "AI models · $ready of ${ModelKind.entries.size} ready",
             ModelKind.entries.mapIndexed { i, kind -> { ModelRow(i + 1, kind, state, actions, onRemove) } },
         )
+        if (!m.searchModelsReady) {
+            // The three search models download in the app; Gemma is the only manual one.
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                KdsInfo("Wi-Fi only", "Downloads wait for Wi-Fi so mobile data isn't used. Turn off to download on mobile data now.",
+                    style = Kds.type.caption, color = Kds.colors.foreground, modifier = Modifier.weight(1f))
+                KdsFilterChip(if (m.wifiOnly) "On" else "Off", m.wifiOnly, { actions.setWifiOnly(!m.wifiOnly) })
+            }
+            m.downloadError?.let { KdsCallout("$it What already arrived is kept; tap Download to carry on.", CalloutTone.ERROR) }
+            if (m.downloading) KdsButton("Stop downloading", actions.cancelModelDownload, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+            else KdsButton("Download all search models (about 500 MB)", actions.downloadModels, size = ButtonSize.SM, icon = R.drawable.ic_kds_download)
+        }
         if (ready < ModelKind.entries.size) {
-            KdsProgress(ready.toFloat() / ModelKind.entries.size)
             KdsInfo(
-                "How to add the models",
-                "For each model: tap Download, which opens your browser. When the file has finished downloading, tap Import " +
-                    "next to it and pick the file from Downloads. The app itself never goes online.",
+                "Where's a sign-in needed?",
+                "Only for Gemma. Hugging Face asks you to sign in (a free account) and accept Google's Gemma licence on the model's " +
+                    "page before it lets you download it. Then import the file here. The search models need no sign-in. " +
+                    "Free alternatives to Gemma: describe on a PC (no sign-in), or skip describing: search by look works for every sticker.",
                 style = Kds.type.caption, color = Kds.colors.mutedForeground,
             )
-            KdsButton("Import several files at once", actions.importModels, variant = ButtonVariant.GHOST, size = ButtonSize.SM,
+            KdsButton("Import files you downloaded", actions.importModels, variant = ButtonVariant.GHOST, size = ButtonSize.SM,
                 icon = R.drawable.ic_kds_folder, enabled = m.importing == null)
         }
     }
@@ -333,8 +407,10 @@ private fun ModelRow(step: Int, kind: ModelKind, state: UiState, actions: AppAct
     val c = Kds.colors
     val ready = m.has(kind)
     val importingThis = m.importing != null && m.importingKind == kind
+    val auto = kind != ModelKind.GEMMA
+    val downloadingThis = m.downloading && m.downloadKind == kind
     Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        // Step marker: a number while it's still to do, a tick once imported.
+        // Step marker: a number while it's still to do, a tick once it's here.
         Box(
             Modifier.size(28.dp).background(if (ready) c.brandSoft else c.secondary, CircleShape),
             contentAlignment = Alignment.Center,
@@ -344,22 +420,37 @@ private fun ModelRow(step: Int, kind: ModelKind, state: UiState, actions: AppAct
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                KdsInfo(kind.title, kind.purpose + if (ready) " · imported, ${mb(m.present[kind] ?: 0)}" else "",
+                KdsInfo(kind.title, kind.purpose + if (ready) " · ${mb(m.present[kind] ?: 0)}" else "",
                     modifier = Modifier.weight(1f, fill = false))
-                if (ready) KdsBadge("Ready", BadgeTone.SOFT) else KdsBadge("Not imported", BadgeTone.SECONDARY)
+                when {
+                    ready -> KdsBadge("Ready", BadgeTone.SOFT)
+                    downloadingThis -> {}
+                    m.downloading && auto -> KdsBadge("Waiting", BadgeTone.SECONDARY)
+                    kind == ModelKind.GEMMA -> KdsBadge("Sign-in needed", BadgeTone.WARNING)
+                    else -> KdsBadge("Not downloaded", BadgeTone.SECONDARY)
+                }
             }
-            if (ready) {
-                KdsButton("Remove", { onRemove(kind) }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
-            } else {
-                Text("File: ${kind.downloadName} · about ${if (kind.approxMb >= 1000) "%.1f GB".format(kind.approxMb / 1000.0) else "${kind.approxMb} MB"}",
-                    style = Kds.type.mono, color = c.foreground)
-                KdsInfo("Download notes", kind.downloadNote, style = Kds.type.caption, color = c.mutedForeground)
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    KdsButton("Download", { actions.openUrl(kind.downloadUrl) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM,
-                        icon = R.drawable.ic_kds_share)
-                    kind.licenceUrl?.let { url ->
-                        KdsButton("Accept licence", { actions.openUrl(url) }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+            val size = if (kind.approxMb >= 1000) "%.1f GB".format(kind.approxMb / 1000.0) else "${kind.approxMb} MB"
+            when {
+                ready -> KdsButton("Remove", { onRemove(kind) }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+                downloadingThis -> {
+                    Text("Downloading · ${m.downloadText.orEmpty()}", style = Kds.type.caption.copy(fontFeatureSettings = "tnum"), color = c.foreground)
+                    KdsProgress(m.downloadFraction)
+                }
+                auto -> Text("About $size · free, no sign-in · downloads in the app", style = Kds.type.caption, color = c.mutedForeground)
+                else -> {
+                    Text("File: ${kind.downloadName} · about $size", style = Kds.type.mono, color = c.foreground)
+                    Text("Needs a free Hugging Face account: sign in on huggingface.co and accept Google's Gemma licence, " +
+                        "then download in your browser and import it here. Describing then runs while charging and, " +
+                        "with thousands of stickers, can take several nights.",
+                        style = Kds.type.caption, color = c.mutedForeground)
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        kind.licenceUrl?.let { url ->
+                            KdsButton("Sign in & accept", { actions.openUrl(url) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
+                        }
+                        KdsButton("Download", { actions.openUrl(kind.downloadUrl) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM,
+                            icon = R.drawable.ic_kds_download)
                     }
                     KdsButton(
                         if (importingThis) m.importing ?: "Importing" else "Import", { actions.importModel(kind) },
@@ -492,8 +583,8 @@ private fun StatusPanel(state: UiState, actions: AppActions) {
         Spacer(Modifier.height(6.dp))
         KdsInfo(
             "How this works",
-            "Scan finds new and removed stickers. Describing runs overnight while charging; Describe now runs it on battery too " +
-                "(a few nights for all of them). Pause stops it until you resume, also from the notification. " +
+            "Scan finds new and removed stickers. Describing runs while charging; with thousands of stickers it can take several " +
+                "nights. Describe now runs it on battery too. Pause stops it until you resume, also from the notification. " +
                 "Nothing is redone: described stickers are kept.",
             style = Kds.type.caption, color = Kds.colors.mutedForeground,
         )

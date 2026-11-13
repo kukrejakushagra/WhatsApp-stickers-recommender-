@@ -261,11 +261,17 @@ object StickerPacks {
     const val WHATSAPP = "com.whatsapp"
     const val WHATSAPP_BUSINESS = "com.whatsapp.w4b"
 
+    /**
+     * WhatsApp Business support is hidden for now: stickers are sent to WhatsApp only, and Settings
+     * and the setup don't offer a Business folder. The code stays; flip this to bring it back.
+     */
+    const val BUSINESS_ENABLED = false
+
     fun appName(pkg: String) = if (pkg == WHATSAPP_BUSINESS) "WhatsApp Business" else "WhatsApp"
 
     /** The WhatsApp apps installed on this phone, regular first. */
     fun installedApps(ctx: Context): List<String> =
-        listOf(WHATSAPP, WHATSAPP_BUSINESS).filter { ctx.packageManager.getLaunchIntentForPackage(it) != null }
+        (if (BUSINESS_ENABLED) listOf(WHATSAPP, WHATSAPP_BUSINESS) else listOf(WHATSAPP)).filter { ctx.packageManager.getLaunchIntentForPackage(it) != null }
 
     /** Both are installed and the user hasn't said which one to send with yet. */
     fun needsAppChoice(ctx: Context) = shouldAsk(installedApps(ctx), prefs(ctx).getString("wa_target", null))

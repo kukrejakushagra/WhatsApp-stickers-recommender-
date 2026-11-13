@@ -1,6 +1,6 @@
 # Publishing on Google Play
 
-Package: **`app.stickersearch`** (permanent once uploaded) · version 1.0.0 (versionCode 41) · min Android 9 · arm64 · Play App Signing.
+Package: **`app.stickersearch`** (permanent once uploaded) · version 1.1.0 (versionCode 43) · min Android 9 · arm64 · Play App Signing.
 
 ## 0. Build the bundle
 Create your own upload key first (README › Release signing). It lives outside the repo. Point the build at its properties file (or copy it to `keystore.properties` in the project root, which git ignores):
@@ -30,9 +30,9 @@ Upload `app/build/outputs/bundle/release/app-release.aab`. Each upload needs a h
   > • "Suggest stickers": share a chat screenshot and get fitting replies
   > • Related stickers: story sequences, look-alikes and shared topics
   > • Make your own sticker packs from a search
-  > • Works with WhatsApp and WhatsApp Business, through WhatsApp's official sticker-pack feature
+  > • Sends stickers in WhatsApp through WhatsApp's official sticker-pack feature
   >
-  > Private by design: everything runs on your phone. The app has no internet access, no ads, no tracking and no account. You import the AI models yourself; an optional script lets a PC describe your stickers faster.
+  > Private by design: the AI runs on your phone. Your stickers, chats and descriptions never leave it. The app only goes online to download its free AI models (about 500 MB, on Wi-Fi). No ads, no tracking, no account. An optional script lets your own PC describe your stickers faster.
   >
   > AI Sticker Search is an independent app and is not affiliated with WhatsApp LLC or Meta.
 
@@ -48,9 +48,9 @@ Upload `app/build/outputs/bundle/release/app-release.aab`. Each upload needs a h
 - **App access:** all features are available without special access. Note for reviewers: "No login. To see content, the device needs WhatsApp stickers; pick WhatsApp's Media folder in Settings."
 - **Content rating:** answer **No** to violence, sexual content, gambling, user interaction and sharing location. Stickers are the user's own. This usually gives Everyone or PEGI 3. Choose "contains user-generated content": No.
 - **Target audience:** 13 and over (WhatsApp's own minimum). Not designed for children.
-- **Data safety:**
+- **Data safety** (the API can't fill this; do it in the Console):
   - **Data collected: None. Data shared: None.**
-  - Everything stays on the device; there's no Internet permission.
+  - Everything stays on the device. Internet is used only to download public AI model files from Hugging Face; no user data is sent.
   - Encryption in transit: not applicable. Deletion: the user can delete the data in the app (Settings › Data › Delete index) or by uninstalling.
 - **Government app / financial / health:** No.
 
@@ -60,7 +60,7 @@ Google reviews these by hand. Have a **short screen recording** ready for each (
 ### All files access (`MANAGE_EXTERNAL_STORAGE`)
 - **Core feature:** "Indexing and searching the user's WhatsApp sticker files stored in shared storage."
 - **Justification:**
-  > The app's core purpose is to search the sticker files WhatsApp keeps in shared storage (Android/media/com.whatsapp/…/WhatsApp Stickers). The app reads only sticker folders, never other files. The Storage Access Framework folder picker is offered first and works for most users. All files access is an optional fallback for devices where the picker can't grant the WhatsApp media folder. No data leaves the device (no Internet permission).
+  > The app's core purpose is to search the sticker files WhatsApp keeps in shared storage (Android/media/com.whatsapp/…/WhatsApp Stickers). The app reads only sticker folders, never other files. The Storage Access Framework folder picker is offered first and works for most users. All files access is an optional fallback for devices where the picker can't grant the WhatsApp media folder. No user data leaves the device (the internet is used only to download the public AI model files).
 - **Risk:** Google often refuses all-files access when the folder picker suffices.
   - If it's refused, the fix is to remove this permission from the Play build. The folder picker keeps working, and Android 9–10 use the storage permission.
   - A sideload build can keep it.
@@ -75,7 +75,22 @@ If Google refuses this, switch the Settings button to open the system battery-op
   > A user-visible notification shows progress while the app indexes the sticker files and runs the on-device AI over them (and while it builds the user-requested export file). These are user-initiated or charging-time tasks that take minutes to hours and must not be interrupted.
 - Video: start a scan in Settings, then show the progress notification.
 
-## 5. Before each release
+## 5. Uploading from the command line
+`tools/play/play.py` uses the Play Developer API with the service account. Set `PLAY_SERVICE_ACCOUNT_JSON_BASE64` (and, for `upload`, the `UPLOAD_*` variables; see README › Secrets), then:
+
+```bash
+python3 tools/play/play.py listing --dry-run
+```
+```bash
+python3 tools/play/play.py listing images
+```
+```bash
+python3 tools/play/play.py upload --track internal
+```
+
+The listing text lives in `docs/store/listing.json` and the graphics in `docs/store/`. The API can't fill in content rating, data safety, app access, target audience or permission declarations; do those in the Console. An internal-testing release doesn't count towards the closed-testing rule (12 testers for 14 days): that needs the closed track.
+
+## 6. Before each release
 - [ ] Raise `versionCode` (and `versionName`).
 - [ ] `./gradlew testDebugUnitTest lintRelease bundleRelease` with the upload key.
 - [ ] Release notes.
@@ -84,5 +99,5 @@ If Google refuses this, switch the Settings button to open the system battery-op
 ## Moving from an earlier sideloaded build
 A build with a different package name is a separate app; both can be installed side by side. To carry the work over:
 1. In the old app: **Settings › Faster: describe on a PC › Share descriptions**.
-2. In the new app: import the models, pick the folder, scan, then **Import results** with that file.
+2. In the new app: follow the setup, then **Import results** with that file.
 3. Uninstall the old app.

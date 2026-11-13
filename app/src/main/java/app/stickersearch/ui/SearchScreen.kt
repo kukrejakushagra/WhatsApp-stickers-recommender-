@@ -210,8 +210,9 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
                             "Pick WhatsApp's Media folder in Settings and run a scan.", actionLabel = "Go to settings", onAction = goToSettings)
                     }
                     !state.models.searchReady -> KdsCallout(
-                        "Import the AI models in Settings to search by meaning. Until then, only stickers you've described are found.",
-                        CalloutTone.BRAND, title = "Search needs its models",
+                        if (state.models.downloading) "The search models are downloading (${state.models.downloadText ?: "starting"}). Until they're in, only stickers you've described are found."
+                        else "Download the search models in Settings (about 500 MB, free, no sign-in) to search by meaning and by look. Until then, only stickers you've described are found.",
+                        CalloutTone.BRAND, title = if (state.models.downloading) "Getting search ready" else "Search needs its models",
                     )
                 }
                 if (assist.attachments.isNotEmpty()) {
@@ -355,7 +356,7 @@ private fun AssistHeader(assist: AssistState, actions: AppActions, selecting: Bo
         assist.note?.let { KdsCallout(it, CalloutTone.NEUTRAL) }
         if (assist.suggestions.isEmpty() && assist.found.isEmpty()) {
             KdsEmptyState(R.drawable.ic_kds_search, "Nothing fitting yet",
-                "Add a few words about what you want to say, or let more stickers get described overnight.")
+                "Add a few words about what you want to say. As more stickers get described (while charging, over several nights), suggestions get better.")
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("%d ms".format(assist.millis), style = Kds.type.caption.copy(fontFeatureSettings = "tnum"),

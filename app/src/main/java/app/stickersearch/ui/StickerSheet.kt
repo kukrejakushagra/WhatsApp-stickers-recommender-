@@ -207,7 +207,7 @@ internal fun StickerSheet(
                 }
             }
         } else if (s.status == StickerStatus.PENDING) {
-            KdsCallout("Not described yet. It's found by how it looks until the AI describes it, usually overnight while charging.",
+            KdsCallout("Not described yet. It's found by how it looks until the AI describes it, which runs while charging and can take several nights for thousands of stickers. Describing it yourself is instant.",
                 CalloutTone.NEUTRAL)
             Spacer(Modifier.height(8.dp))
             KdsButton("Describe it myself", { editing = true }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)

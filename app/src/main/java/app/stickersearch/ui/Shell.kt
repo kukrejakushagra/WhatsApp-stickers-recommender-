@@ -96,6 +96,17 @@ data class AppActions(
     val setAlwaysRefresh: (Boolean) -> Unit = {},
     val settingsOpened: () -> Unit = {},
     val readdPack: (app.stickersearch.share.StickerPacks.Pack) -> Unit = {},
+    // Model downloads and the first-run setup
+    val downloadModels: () -> Unit = {},
+    val cancelModelDownload: () -> Unit = {},
+    val setWifiOnly: (Boolean) -> Unit = {},
+    val setSetupStep: (Int) -> Unit = {},
+    val finishSetup: () -> Unit = {},
+    /** Ends the setup without the "send" tip (another screen opens instead). */
+    val finishSetupQuietly: () -> Unit = {},
+    val dismissSetup: () -> Unit = {},
+    val reopenSetup: () -> Unit = {},
+    val openSettingsAt: (String) -> Unit = {},
 )
 
 @Composable
@@ -197,6 +208,15 @@ fun MainScreen(vm: MainViewModel, openAllFilesSettings: () -> Unit) {
             },
             setUpQuickSend = { vm.setUpQuickSend { intent -> addPack.launch(intent) } },
             readdPack = { pack -> vm.readdPack(pack) { intent -> addPack.launch(intent) } },
+            downloadModels = { askNotifications(); vm.downloadModels() },
+            cancelModelDownload = vm::cancelModelDownload,
+            setWifiOnly = vm::setWifiOnly,
+            setSetupStep = vm::setSetupStep,
+            finishSetup = { vm.finishSetup() },
+            finishSetupQuietly = { vm.finishSetup(null) },
+            dismissSetup = vm::dismissSetup,
+            reopenSetup = vm::reopenSetup,
+            openSettingsAt = vm::openSettingsAt,
         )
     }
     AppShell(state, actions, onSearchOpened = vm::consumeOpenSearch)
@@ -226,6 +246,15 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
             if (state.selecting) actions.stopSelecting()
             tab = Tab.SETTINGS.ordinal
         }
+    }
+    // First run: the guided setup takes the whole screen until it's finished or put off.
+    if (!state.setupDone && !state.setupDismissed) {
+        KdsGround(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().statusBarsPadding()) { SetupScreen(state, actions) }
+            KdsToastHost(state.message, actions.messageShown,
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 12.dp))
+        }
+        return
     }
     KdsGround(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().statusBarsPadding()) {

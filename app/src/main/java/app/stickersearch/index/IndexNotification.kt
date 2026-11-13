@@ -39,13 +39,13 @@ object IndexNotification {
         )
     }
 
-    private fun build(ctx: Context, done: Int, total: Int, title: String, target: String): Notification {
+    private fun build(ctx: Context, done: Int, total: Int, title: String, target: String, text: String? = null): Notification {
         channel(ctx)
         return Notification.Builder(ctx, CHANNEL)
             .setContentIntent(openApp(ctx, target))
             .setSmallIcon(R.drawable.ic_kds_search)
             .setContentTitle(title)
-            .setContentText(if (total > 0) "%,d of %,d".format(done, total) else "Listing files")
+            .setContentText(text ?: if (total > 0) "%,d of %,d".format(done, total) else "Listing files")
             .setProgress(total, done, total == 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -72,6 +72,22 @@ object IndexNotification {
             android.os.Build.VERSION.SDK_INT >= 35 -> ForegroundInfo(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
             android.os.Build.VERSION.SDK_INT >= 29 -> ForegroundInfo(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
             else -> ForegroundInfo(ID, n)
+        }
+    }
+
+    /** Model downloads: their own notification (so a scan can run beside them), always "data sync". */
+    const val DOWNLOAD_ID = 4202
+
+    fun downloadInfo(ctx: Context, done: Int, total: Int, text: String): ForegroundInfo {
+        val n = build(ctx, done, total, "Downloading search models", TARGET_STATUS, text)
+        return if (android.os.Build.VERSION.SDK_INT >= 29) ForegroundInfo(DOWNLOAD_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        else ForegroundInfo(DOWNLOAD_ID, n)
+    }
+
+    fun updateDownload(ctx: Context, done: Int, total: Int, text: String) {
+        runCatching {
+            ctx.getSystemService(NotificationManager::class.java)
+                .notify(DOWNLOAD_ID, build(ctx, done, total, "Downloading search models", TARGET_STATUS, text))
         }
     }
 
