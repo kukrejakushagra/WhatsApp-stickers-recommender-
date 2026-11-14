@@ -26,5 +26,9 @@
   "50": {
     "en-GB": "• Made for tablets and landscape: setup and Settings sit in a comfortable column, and on wide screens the sticker's details open beside the results\n• The intro is now an 8-second clip that fits your screen, with Skip from the first frame",
     "hi-IN": "• टैबलेट और लैंडस्केप के लिए: सेटअप और सेटिंग्स आराम से पढ़ने लायक कॉलम में, और चौड़ी स्क्रीन पर स्टिकर की जानकारी नतीजों के बगल में खुलती है\n• परिचय अब 8 सेकंड की छोटी क्लिप है जो आपकी स्क्रीन पर फ़िट होती है, पहली फ़्रेम से Skip के साथ"
+  },
+  "51": {
+    "en-GB": "• Fixes the app closing as soon as it opened after the last update. Sorry about that!\n\nAlso in 1.2: made for tablets and landscape, an 8-second intro you can skip, search models that download when you tap.",
+    "hi-IN": "• पिछले अपडेट के बाद ऐप खुलते ही बंद हो जाने की समस्या ठीक की गई। असुविधा के लिए खेद है!\n\n1.2 में यह भी: टैबलेट और लैंडस्केप के लिए, 8 सेकंड का परिचय जिसे छोड़ सकते हैं, सर्च मॉडल जो दबाने पर डाउनलोड होते हैं।"
   }
 }

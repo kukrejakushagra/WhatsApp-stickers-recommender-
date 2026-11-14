@@ -267,6 +267,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<UiState> = _state
     private var searchJob: Job? = null
     private val graphRepo = app.stickersearch.graph.GraphRepository(application)
+
+    // Every stored property must sit above init (ViewModelInitOrderTest checks this): Kotlin sets them up
+    // in the order written, so one declared below init is still null while init runs.
+    private var pendingPack: StickerPacks.Pack? = null
+    /** Set by Send in WhatsApp: once WhatsApp has added the pack, open it so the sticker can be sent. */
+    private var openAfterAdd = false
+    /** Packs still to show WhatsApp's "Add" screen for, after the current one (bulk pack creation). */
+    private val addQueue = ArrayDeque<StickerPacks.Pack>()
+    private var queuedAsk: ((Intent) -> Unit)? = null
     @Volatile private var graph = app.stickersearch.graph.StickerGraph(emptyList())
 
     init {
@@ -463,7 +472,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------------- model downloads ----------------
 
-    private val D = app.stickersearch.index.ModelDownloadWorker
+    // A getter, not a stored property: init runs before properties declared below it are set, and a
+    // stored `D` here was still null when init started the download observers (the 1.1.4-1.2.0 crash).
+    private val D get() = app.stickersearch.index.ModelDownloadWorker
 
     /** Download, Resume or Retry one model. Only ever called from a tap. */
     fun downloadModel(kind: ModelKind) {
@@ -1060,10 +1071,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(alwaysRefresh = on) }
     }
 
-    private var pendingPack: StickerPacks.Pack? = null
-    /** Set by Send in WhatsApp: once WhatsApp has added the pack, open it so the sticker can be sent. */
-    private var openAfterAdd = false
-
     private fun readyHint(pack: StickerPacks.Pack) =
         "In the chat, tap the sticker icon, then the ${pack.title} tray: your sticker is first."
 
@@ -1097,10 +1104,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshPacks()
         addPackToWhatsApp(pack, askToAdd)
     }
-    /** Packs still to show WhatsApp's "Add" screen for, after the current one (bulk pack creation). */
-    private val addQueue = ArrayDeque<StickerPacks.Pack>()
-    private var queuedAsk: ((Intent) -> Unit)? = null
-
     private fun refreshPacks() {
         val list = StickerPacks.all(ctx).map { p ->
             val e = StickerPacks.entries(ctx, p)
