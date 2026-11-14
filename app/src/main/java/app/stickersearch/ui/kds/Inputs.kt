@@ -42,11 +42,13 @@ fun KdsSearchField(
     placeholder: String,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
+    /** 48 dp normally; 40 dp on short screens (phones in landscape). */
+    height: androidx.compose.ui.unit.Dp = KdsSize.controlXl,
 ) {
     val c = Kds.colors
     val shape = CircleShape
     Row(
-        modifier.fillMaxWidth().height(KdsSize.controlXl).glass(Glass.PANEL, shape, elevation = 4.dp).padding(start = 16.dp, end = 6.dp),
+        modifier.fillMaxWidth().height(height).glass(Glass.PANEL, shape, elevation = 4.dp).padding(start = 16.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

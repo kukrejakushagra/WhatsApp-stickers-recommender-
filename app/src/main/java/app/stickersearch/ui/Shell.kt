@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -269,7 +274,9 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
             tab = Tab.SETTINGS.ordinal
         }
     }
-    val twoPane = Adaptive.twoPane(screenWidthDp())
+    val width = screenWidthDp()
+    val landscape = isLandscape()
+    val twoPane = Adaptive.twoPane(width, landscape)
     // First run: the guided setup takes the whole screen until it's finished or put off.
     if (!state.setupDone && !state.setupDismissed) {
         KdsGround(Modifier.fillMaxSize()) {
@@ -279,54 +286,66 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
         }
         return
     }
+    // Landscape: a solid rail on the left, so the full height goes to content. Portrait: a solid bar docked at the bottom.
+    val rail = landscape
+    val imeVisible = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val busy = (state.index.running && state.index.total > 0) || state.ai.running
+    val navItems = listOf(
+        NavItem("Stickers", R.drawable.ic_kds_search),
+        NavItem("Settings", R.drawable.ic_kds_sliders, count = if (busy) (state.ai.total - state.ai.done).takeIf { it > 0 }
+            ?: (state.index.total - state.index.done).takeIf { it > 0 } else null),
+    )
+    val onNav: (Int) -> Unit = { if (it != tab && state.selecting) actions.stopSelecting(); keyboard?.hide(); tab = it }
     KdsGround(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().statusBarsPadding()) {
-            when (Tab.entries.getOrElse(tab) { Tab.SEARCH }) {
-                Tab.SEARCH -> if (twoPane) {
-                    // Wide screens: results on the left, the chosen sticker's details on the right.
-                    Row(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(0.58f).fillMaxHeight()) {
-                            SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
-                        }
-                        Box(Modifier.weight(0.42f).fillMaxHeight().padding(top = 12.dp, end = 16.dp, bottom = BottomClearance)) {
-                            val s = selected
-                            if (s != null) {
-                                val live = state.stickers.firstOrNull { it.id == s.id } ?: s
-                                StickerSheet(live, actions, state, onOpen = { selected = it }, onSearch = { q ->
-                                    actions.stopSelecting(); actions.useRecent(q)
-                                }, asPane = true) { selected = null }
-                            } else {
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    app.stickersearch.ui.kds.KdsEmptyState(R.drawable.ic_kds_image, "Pick a sticker",
-                                        "Tap any sticker to see what it says, its keywords and look-alikes, and send it from here.")
+        Row(Modifier.fillMaxSize()) {
+            if (rail) app.stickersearch.ui.kds.KdsNavRail(navItems, tab, onNav)
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Box(
+                    Modifier.weight(1f).fillMaxWidth().statusBarsPadding()
+                        .then(if (rail) Modifier.windowInsetsPadding(
+                            androidx.compose.foundation.layout.WindowInsets.navigationBars.union(androidx.compose.foundation.layout.WindowInsets.displayCutout)
+                                .only(androidx.compose.foundation.layout.WindowInsetsSides.End + androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+                        else Modifier),
+                ) {
+                    when (Tab.entries.getOrElse(tab) { Tab.SEARCH }) {
+                        Tab.SEARCH -> if (twoPane) {
+                            // Wide screens and landscape: results on the left, the chosen sticker's details on the right.
+                            val split = if (width >= 840) 0.58f else 0.5f
+                            Row(Modifier.fillMaxSize()) {
+                                Box(Modifier.weight(split).fillMaxHeight()) {
+                                    SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
+                                }
+                                Box(Modifier.weight(1f - split).fillMaxHeight().padding(top = 12.dp, end = 16.dp, bottom = 12.dp)) {
+                                    val s = selected
+                                    if (s != null) {
+                                        val live = state.stickers.firstOrNull { it.id == s.id } ?: s
+                                        StickerSheet(live, actions, state, onOpen = { selected = it }, onSearch = { q ->
+                                            actions.stopSelecting(); actions.useRecent(q)
+                                        }, asPane = true) { selected = null }
+                                    } else {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            app.stickersearch.ui.kds.KdsEmptyState(R.drawable.ic_kds_image, "Pick a sticker",
+                                                "Tap any sticker to see what it says, its keywords and look-alikes, and send it from here.")
+                                        }
+                                    }
                                 }
                             }
-                        }
+                        } else SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
+                        Tab.SETTINGS -> CenteredColumn { SettingsScreen(state, actions) }
                     }
-                } else SearchScreen(state, actions, onOpen = { selected = it }, goToSettings = { tab = Tab.SETTINGS.ordinal })
-                Tab.SETTINGS -> CenteredColumn { SettingsScreen(state, actions) }
+                    // Messages sit at the bottom of the content, above the keyboard when it's up.
+                    KdsToastHost(state.message, actions.messageShown,
+                        Modifier.align(Alignment.BottomCenter).imePadding().padding(horizontal = 16.dp).padding(bottom = 12.dp))
+                }
+                // While the keyboard is up, the bar steps aside (it would sit right on top of the keyboard).
+                if (!rail && !imeVisible) KdsBottomNav(navItems, tab, onNav)
             }
         }
-        // While the keyboard is up, the tab bar steps aside (it would sit right on top of the keyboard)
-        // and messages move up above it.
-        val imeVisible = androidx.compose.foundation.layout.WindowInsets.isImeVisible
-        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
-            KdsToastHost(state.message, actions.messageShown, Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp))
-            val busy = (state.index.running && state.index.total > 0) || state.ai.running
-            if (!imeVisible) KdsBottomNav(
-                items = listOf(
-                    NavItem("Stickers", R.drawable.ic_kds_search),
-                    NavItem("Settings", R.drawable.ic_kds_sliders, count = if (busy) (state.ai.total - state.ai.done).takeIf { it > 0 }
-                        ?: (state.index.total - state.index.done).takeIf { it > 0 } else null),
-                ),
-                selected = tab,
-                onSelect = { if (it != tab && state.selecting) actions.stopSelecting(); keyboard?.hide(); tab = it },
-                modifier = Modifier.navigationBarsPadding().widthIn(max = Adaptive.NavMaxWidth),
-            )
-        }
     }
-    if (!twoPane || tab != Tab.SEARCH.ordinal) selected?.let { s ->
+    // A bottom sheet only where there's no side pane, and only on the Stickers tab: switching to Settings
+    // never shows the open sticker; coming back shows it again (in the pane, or here).
+    if (!twoPane && tab == Tab.SEARCH.ordinal) selected?.let { s ->
         // Keep the sheet in step with the live row (status, thumbnail) while it's open.
         val live = state.stickers.firstOrNull { it.id == s.id } ?: s
         StickerSheet(live, actions, state, onOpen = { selected = it }, onSearch = { q ->
@@ -335,4 +354,5 @@ fun AppShell(state: UiState, actions: AppActions, initialTab: Int = 0, onSearchO
     }
 }
 
-internal val BottomClearance = 104.dp
+/** Room left at the end of scrolling lists. The bar is docked now, so nothing covers the content. */
+internal val BottomClearance = 16.dp

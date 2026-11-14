@@ -128,30 +128,38 @@ internal fun SearchScreen(state: UiState, actions: AppActions, onOpen: (StickerR
     )
     Column(Modifier.fillMaxSize()) {
     // ---- Pinned: the search box, and the library filters (or the results line) ----
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
+    // Short screens (phones in landscape): a slimmer field, and the filters share its row.
+    val compactTop = Adaptive.short(screenHeightDp())
+    val filtersInline = compactTop && browsing && all.isNotEmpty()
+    val filterChips: @Composable (Modifier) -> Unit = { m ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = m) {
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LibraryFilter.entries
+                    .filter { f -> f == LibraryFilter.ALL || f == filter || counts.getValue(f) > 0 }
+                    .forEach { f -> KdsFilterChip(f.label, filter == f, { filter = if (filter == f) LibraryFilter.ALL else f }, counts.getValue(f)) }
+            }
+            if (!selecting) { Spacer(Modifier.width(8.dp)); SelectButton(actions) }
+        }
+    }
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = if (compactTop) 8.dp else 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KdsSearchField(
+                height = if (compactTop) 40.dp else 48.dp,
                 value = s.query, onValueChange = actions.onQueryChange,
                 onSearch = { if (assist.attachments.isNotEmpty()) actions.runAssist() else actions.submitSearch(); dismissKeyboard() },
                 placeholder = if (assist.attachments.isEmpty()) "Search %,d stickers".format(all.size).takeIf { all.isNotEmpty() } ?: "Describe what you want to say"
                     else "Add what you want to say (optional)",
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(if (filtersInline) 0.45f else 1f),
             )
+            if (filtersInline) filterChips(Modifier.weight(0.55f))
             KdsIconButton(R.drawable.ic_kds_image, "Add screenshots or images", actions.attachImages)
         }
-        if (browsing && all.isNotEmpty()) {
+        if (browsing && all.isNotEmpty() && !filtersInline) {
             Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(
-                    Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LibraryFilter.entries
-                        .filter { f -> f == LibraryFilter.ALL || f == filter || counts.getValue(f) > 0 }
-                        .forEach { f -> KdsFilterChip(f.label, filter == f, { filter = if (filter == f) LibraryFilter.ALL else f }, counts.getValue(f)) }
-                }
-                if (!selecting) { Spacer(Modifier.width(8.dp)); SelectButton(actions) }
-            }
+            filterChips(Modifier.fillMaxWidth())
         } else if (s.query.isNotBlank() && assist.attachments.isEmpty()) {
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (s.searching) SpinningLoader(14.dp, Kds.colors.mutedForeground)

@@ -24,8 +24,12 @@ internal object Adaptive {
     /** The bottom tab bar stays thumb-sized on wide screens. */
     val NavMaxWidth = 480.dp
 
-    /** Expanded width (10-inch tablets in landscape, many 7-inch ones too): results and details side by side. */
-    fun twoPane(widthDp: Int) = widthDp >= 840
+    /**
+     * Results and details side by side: on expanded widths (10-inch tablets in landscape), and in any
+     * landscape window at least 600 dp wide (phones and 7-inch tablets in landscape), where a bottom
+     * sheet would have almost no height to show the details in.
+     */
+    fun twoPane(widthDp: Int, landscape: Boolean) = widthDp >= 840 || (landscape && widthDp >= 600)
 
     /** Short screens (phones in landscape): smaller fixed headers so content still fits. */
     fun short(heightDp: Int) = heightDp < 480

@@ -94,8 +94,9 @@ fun Modifier.dottedUnderline(color: Color): Modifier = drawBehind {
 }
 
 /**
- * A label whose explanation is tucked away: the label is underlined with dots, and tapping it
- * shows (or hides) [details] underneath. Keeps screens short without losing the help text.
+ * A label whose explanation is tucked away: the label is underlined with dots, and tapping it shows
+ * [details] in a tooltip beside it (nothing on the screen moves). Keeps screens short without losing
+ * the help text.
  */
 @Composable
 fun KdsInfo(
@@ -106,16 +107,15 @@ fun KdsInfo(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Box(modifier) {
         Text(
             label, style = style, color = color,
             modifier = if (details.isNullOrBlank()) Modifier
                 else Modifier.dottedUnderline(Kds.colors.mutedForeground)
+                    .semantics { contentDescription = "$label. $details" }
                     .clickable(role = Role.Button, onClickLabel = if (open) "Hide details" else "Show details") { open = !open },
         )
-        androidx.compose.animation.AnimatedVisibility(visible = open && !details.isNullOrBlank()) {
-            Text(details.orEmpty(), style = Kds.type.caption, color = Kds.colors.mutedForeground)
-        }
+        if (open && !details.isNullOrBlank()) KdsTooltip(details) { open = false }
     }
 }
 

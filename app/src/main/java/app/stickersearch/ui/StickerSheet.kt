@@ -140,31 +140,47 @@ internal fun StickerSheet(
     val a = details?.annotation
     val dims = if (s.width > 0) "${s.width}×${s.height} · " else ""
     val dur = s.durationMs?.takeIf { it > 0 }?.let { "%.1f s · ".format(it / 1000.0) } ?: ""
+    // Short screens (phones in landscape): the preview scrolls with the text instead of staying pinned,
+    // and the buttons share one row, so the description has room.
+    val compact = Adaptive.short(screenHeightDp())
+    val preview: @Composable () -> Unit = {
+        Box(
+            Modifier.fillMaxWidth().height(if (compact) 120.dp else if (asPane) 240.dp else 180.dp).clip(RoundedCornerShape(18.dp)).background(Kds.colors.glassClear),
+            contentAlignment = Alignment.Center,
+        ) {
+            val uri = s.primaryUri?.let(Uri::parse)
+            when {
+                uri == null -> KdsEmptyState(R.drawable.ic_kds_image, "File missing", "Run a scan to find it again.")
+                s.isLottie() -> LottiePreview(uri, Modifier.fillMaxSize().padding(12.dp))
+                else -> AnimatedPreview(uri, Modifier.fillMaxSize().padding(12.dp))
+            }
+        }
+    }
     StickerFrame(
         asPane = asPane,
         title = if (editing) "Edit description" else formatName(s),
         subtitle = if (editing) "Your changes are kept when stickers are analysed again" else "$dims$dur${"%,d".format(s.sizeBytes / 1024)} KB",
         onDismiss = onDismiss,
-        // The playing preview stays pinned at the top while the rest scrolls.
-        header = if (editing) null else {
-            {
-                Box(
-                    Modifier.fillMaxWidth().height(if (Adaptive.short(screenHeightDp())) 120.dp else if (asPane) 240.dp else 180.dp).clip(RoundedCornerShape(18.dp)).background(Kds.colors.glassClear),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val uri = s.primaryUri?.let(Uri::parse)
-                    when {
-                        uri == null -> KdsEmptyState(R.drawable.ic_kds_image, "File missing", "Run a scan to find it again.")
-                        s.isLottie() -> LottiePreview(uri, Modifier.fillMaxSize().padding(12.dp))
-                        else -> AnimatedPreview(uri, Modifier.fillMaxSize().padding(12.dp))
-                    }
-                }
-            }
-        },
+        // The playing preview stays pinned at the top while the rest scrolls (not on short screens).
+        header = if (editing || compact) null else { { preview() } },
         footer = if (editing) null else {
-            {
+            StickerFrameFooter@{
                 // The sheet covers the app's own toasts, so messages about sending show here.
                 KdsToastHost(message, actions.messageShown, Modifier.align(Alignment.CenterHorizontally))
+                if (compact) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        KdsButton(if (state.sendingId == s.id) "Preparing" else "Send in WhatsApp", { actions.sendViaWhatsApp(s) },
+                            modifier = Modifier.weight(1f), loading = state.sendingId == s.id,
+                            icon = R.drawable.ic_kds_send, enabled = s.primaryUri != null && !s.isLottie())
+                        if (s.primaryUri != null && !s.isLottie()) {
+                            app.stickersearch.ui.kds.KdsIconButton(R.drawable.ic_kds_folder, "Add to pack", { choosingPack = true })
+                        }
+                        if (s.primaryUri != null) {
+                            app.stickersearch.ui.kds.KdsIconButton(R.drawable.ic_kds_share, "Share as photo", { actions.send(s, StickerSharer.Mode.SYSTEM_SHEET) })
+                        }
+                    }
+                    return@StickerFrameFooter
+                }
                 KdsButton(if (state.sendingId == s.id) "Preparing for WhatsApp" else "Send in WhatsApp", { actions.sendViaWhatsApp(s) },
                     size = ButtonSize.LG, block = true, loading = state.sendingId == s.id,
                     icon = R.drawable.ic_kds_send, enabled = s.primaryUri != null && !s.isLottie())
@@ -181,6 +197,7 @@ internal fun StickerSheet(
             EditForm(s.id, details, actions, onDone = { editing = false; reload++ })
             return@StickerFrame
         }
+        if (compact) { preview(); Spacer(Modifier.height(12.dp)) }
         if (a != null) {
             Text(a.description, style = Kds.type.body, color = Kds.colors.foreground)
             if (a.text.isNotBlank()) {

@@ -30,5 +30,9 @@
   "51": {
     "en-GB": "• Fixes the app closing as soon as it opened after the last update. Sorry about that!\n\nAlso in 1.2: made for tablets and landscape, an 8-second intro you can skip, search models that download when you tap.",
     "hi-IN": "• पिछले अपडेट के बाद ऐप खुलते ही बंद हो जाने की समस्या ठीक की गई। असुविधा के लिए खेद है!\n\n1.2 में यह भी: टैबलेट और लैंडस्केप के लिए, 8 सेकंड का परिचय जिसे छोड़ सकते हैं, सर्च मॉडल जो दबाने पर डाउनलोड होते हैं।"
+  },
+  "52": {
+    "en-GB": "• New navigation: a solid bar at the bottom, and a slim rail on the side in landscape, so nothing is hidden behind it\n• Phones in landscape show stickers and their details side by side\n• Help text opens as a small tooltip next to the label\n• Fixes a sticker card appearing over Settings on tablets",
+    "hi-IN": "• नया नेविगेशन: नीचे एक ठोस बार, और लैंडस्केप में किनारे पर पतली रेल, ताकि उसके पीछे कुछ न छिपे\n• लैंडस्केप में फ़ोन पर स्टिकर और उनकी जानकारी साथ-साथ\n• मदद का टेक्स्ट अब लेबल के पास छोटे टूलटिप में खुलता है\n• टैबलेट पर सेटिंग्स के ऊपर स्टिकर कार्ड दिखने की समस्या ठीक"
   }
 }
