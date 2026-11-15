@@ -234,12 +234,18 @@ internal fun StickerSheet(
         }
         s.statusError?.takeIf { s.needsAttention() }?.let {
             Spacer(Modifier.height(10.dp))
+            // Plain words and a way out; the technical reason is under "Show file details".
             KdsCallout(
-                if (s.isLottie()) "This Lottie file has no animation we can read yet: $it" else it,
+                "Its animation didn't give any frames the app could read, so search by look can't find it yet. " +
+                    "Tap Try again. If it stays like this, describe it yourself: it's searchable straight away.",
                 if (s.status == StickerStatus.FAILED) CalloutTone.ERROR else CalloutTone.WARNING,
+                title = "Search can't see this sticker yet",
             )
             Spacer(Modifier.height(8.dp))
-            KdsButton("Try again", { actions.scan(true) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM, icon = R.drawable.ic_kds_refresh)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KdsButton("Try again", { actions.scan(true) }, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM, icon = R.drawable.ic_kds_refresh)
+                if (a == null) KdsButton("Describe it myself", { editing = true }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+            }
         }
         val fr = details?.frames.orEmpty()
         if (fr.isNotEmpty()) {
@@ -268,6 +274,7 @@ internal fun StickerSheet(
         if (showFiles) {
             KdsKeyValue("Hash", s.sha256.take(16) + "…", mono = true)
             KdsKeyValue("Status", s.status.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() })
+            s.statusError?.let { KdsKeyValue("Reason", it) }
             details?.paths?.forEach { KdsKeyValue("File", it.substringAfterLast("Media/"), mono = true) }
         } else {
             KdsButton("Show file details", { showFiles = true }, variant = ButtonVariant.GHOST, size = ButtonSize.SM)

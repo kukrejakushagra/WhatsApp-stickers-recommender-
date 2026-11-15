@@ -38,13 +38,31 @@ object WasRenderer {
         return Result.Failed("Lottie couldn't parse it (${errors.joinToString("; ").take(400)}); ${content.describe()}")
     }
 
-    /** Images referenced by the animation but stored as separate files in the archive. */
+    /**
+     * Decodes every image the animation uses, up front: pictures embedded in the JSON as
+     * `data:image/...;base64,` and pictures stored as separate files in the archive.
+     *
+     * Lottie only decodes embedded pictures itself when it has a Context, which a LottieDrawable
+     * drawn onto a bitmap (indexing) doesn't have. Without this, stickers made of pictures render
+     * blank when indexed even though they play fine in the app.
+     */
     private fun attachImages(comp: LottieComposition, images: Map<String, ByteArray>) {
-        if (images.isEmpty()) return
         comp.images.values.forEach { asset ->
             if (asset.bitmap != null) return@forEach
-            val data = images[asset.fileName] ?: images[asset.fileName.substringAfterLast('/')] ?: return@forEach
-            BitmapFactory.decodeByteArray(data, 0, data.size)?.let(asset::setBitmap)
+            val data = dataUriBytes(asset.fileName)
+                ?: images[asset.fileName] ?: images[asset.fileName.substringAfterLast('/')] ?: return@forEach
+            val bmp = runCatching { BitmapFactory.decodeByteArray(data, 0, data.size) }.getOrNull() ?: return@forEach
+            // Same sizing Lottie applies to the pictures it decodes itself.
+            val w = asset.width; val h = asset.height
+            asset.bitmap = if (w > 0 && h > 0 && (bmp.width != w || bmp.height != h))
+                android.graphics.Bitmap.createScaledBitmap(bmp, w, h, true).also { if (it !== bmp) bmp.recycle() } else bmp
         }
+    }
+
+    /** The bytes of a `data:...;base64,` image, or null for a file name or broken base64. */
+    fun dataUriBytes(fileName: String?): ByteArray? {
+        if (fileName == null || !fileName.startsWith("data:")) return null
+        val i = fileName.indexOf("base64,").takeIf { it > 0 } ?: return null
+        return runCatching { java.util.Base64.getMimeDecoder().decode(fileName.substring(i + 7)) }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
 }

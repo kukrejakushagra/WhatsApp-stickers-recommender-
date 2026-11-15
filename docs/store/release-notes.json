@@ -38,5 +38,9 @@
   "53": {
     "en-GB": "• Model downloads show in the notification shade: which model, its progress, Pause, and its size when it's done\n• A notice when a download waits for Wi-Fi, with Retry if it fails\n• No longer asks for All files access: the folder you pick is all the app needs",
     "hi-IN": "• मॉडल डाउनलोड अब नोटिफ़िकेशन में दिखते हैं: कौन-सा मॉडल, कितना हुआ, रोकने का बटन, और पूरा होने पर उसका साइज़\n• Wi-Fi का इंतज़ार हो तो सूचना, और विफल होने पर फिर से कोशिश का बटन\n• अब \"सभी फ़ाइलों की पहुँच\" नहीं माँगता: आपका चुना फ़ोल्डर ही काफ़ी है"
+  },
+  "54": {
+    "en-GB": "• Fixes Lottie stickers made of pictures or text showing as unreadable: they're checked again by themselves and become searchable\n• Clearer help when a sticker still can't be read, with Describe it myself\n• The sticker details panel is no longer see-through",
+    "hi-IN": "• चित्रों या टेक्स्ट से बने Lottie स्टिकर अब पढ़े जा सकते हैं: वे अपने-आप दोबारा जाँचे जाते हैं और खोज में आते हैं\n• अगर कोई स्टिकर फिर भी न पढ़ा जाए तो साफ़ मदद, और खुद बताने का विकल्प\n• स्टिकर की जानकारी वाला पैनल अब पारदर्शी नहीं है"
   }
 }

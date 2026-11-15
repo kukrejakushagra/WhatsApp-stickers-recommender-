@@ -104,6 +104,10 @@ interface StickerDao {
     @Query("UPDATE stickers SET attempts = 0 WHERE status IN ('FAILED', 'NEEDS_REVIEW')")
     suspend fun resetProblemAttempts()
 
+    /** Lottie stickers marked unreadable: re-render them (1.2.4 fixed pictures and text in Lottie). */
+    @Query("UPDATE stickers SET attempts = 0 WHERE format = 'LOTTIE_WAS' AND status = 'NEEDS_REVIEW'")
+    suspend fun resetLottieReview(): Int
+
     @Query("SELECT * FROM stickers WHERE status IN ('FAILED', 'NEEDS_REVIEW') LIMIT :limit")
     suspend fun problems(limit: Int): List<StickerEntity>
 

@@ -281,6 +281,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         Sync.schedule(application)
         refreshModels()
+        rerenderBlankLottieOnce()
         _state.update { it.copy(search = it.search.copy(recent = recentSearches())) }
         viewModelScope.launch {
             // Room re-runs this on every write to the stickers table (each description, each vector),
@@ -1355,6 +1356,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Opens Settings at a panel ("status", "pc" or "models"). */
     fun openSettingsAt(target: String) = _state.update { it.copy(openSettingsAt = target) }
+
+    /**
+     * Before 1.2.4, Lottie stickers made of pictures or text rendered blank when indexed and were
+     * marked "renders blank". Once, after updating: queue them again so they're re-rendered and
+     * become searchable without anyone tapping Try again.
+     */
+    private fun rerenderBlankLottieOnce() {
+        if (uiPrefs.getBoolean("lottie_render_fix_1", false)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val n = db.stickers().resetLottieReview()
+            uiPrefs.edit().putBoolean("lottie_render_fix_1", true).apply()
+            if (n > 0) app.stickersearch.index.IndexWorker.enqueue(ctx, "lottie_fix")
+        }
+    }
 
     // ---------------- first-run setup ----------------
 

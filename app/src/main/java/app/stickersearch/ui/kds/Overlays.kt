@@ -107,7 +107,8 @@ fun KdsSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         shape = RoundedCornerShape(topStart = KdsRadius.x2l, topEnd = KdsRadius.x2l),
-        containerColor = c.glassThick,
+        // Opaque, so the stickers behind never show through the details.
+        containerColor = c.background,
         contentColor = c.foreground,
         scrimColor = c.scrim,
         tonalElevation = 0.dp,

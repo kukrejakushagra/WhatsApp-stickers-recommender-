@@ -95,9 +95,15 @@ class FrameExtractor(private val context: Context, private val root: File, priva
         val scale = min(1f, MAX_PX / max(b.width(), b.height()).toFloat())
         val w = scaled(b.width(), scale)
         val h = scaled(b.height(), scale)
-        val drawable = LottieDrawable().apply { setComposition(composition) }
-        val kept = (0 until LOTTIE_SAMPLES).map { k ->
-            val p = k / (LOTTIE_SAMPLES - 1f)
+        val drawable = LottieDrawable().apply {
+            // A host View gives Lottie a Context, as in the app's player: without one it skips
+            // embedded pictures and fonts, and those stickers render blank. Never attached anywhere.
+            callback = android.view.View(context)
+            setComposition(composition)
+            setBounds(0, 0, b.width(), b.height())
+        }
+        fun render(samples: Int) = (0 until samples).map { k ->
+            val p = k / (samples - 1f)
             drawable.progress = p
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp)
@@ -105,6 +111,13 @@ class FrameExtractor(private val context: Context, private val root: File, priva
             drawable.draw(c)
             Kept(k, (composition.duration * p).toLong(), bmp, signature(bmp))
         }
+        var kept = render(LOTTIE_SAMPLES)
+        if (kept.all { KeyframeSelector.isBlank(it.signature) }) {
+            // Short animations can be empty at the 12 sample points: look closer before giving up.
+            kept.forEach { it.bitmap.recycle() }
+            kept = render(LOTTIE_RETRY_SAMPLES)
+        }
+        drawable.callback = null
         if (kept.all { KeyframeSelector.isBlank(it.signature) }) {
             kept.forEach { it.bitmap.recycle() }
             return FrameResult(emptyList(), composition.duration.toLong(),
@@ -138,6 +151,7 @@ class FrameExtractor(private val context: Context, private val root: File, priva
         const val MAX_KEPT = 48
         const val MAX_PX = 256f
         const val LOTTIE_SAMPLES = 12
+        const val LOTTIE_RETRY_SAMPLES = 36
         private const val SIG = 32
 
         /** 32×32 grayscale; transparency maps to mid-grey so a shape on clear reads as change. */
