@@ -42,33 +42,41 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
         val store = ModelStore(ctx)
         val events = EventLog(File(ctx.filesDir, "events.jsonl"))
         if (store.has(kind)) return@withContext Result.success()
-        runCatching { setForeground(IndexNotification.downloadInfo(ctx, kind.ordinal, 0, kind.approxMb, "${kind.title} · starting")) }
+        runCatching { setForeground(DownloadNotification.foreground(ctx, kind, 0, total(ctx, kind))) }
         val part = store.partFile(kind)
         try {
             fetch(kind.downloadUrl, part) { have, size ->
                 if (size > 0) savedTotal(ctx, kind, size)
                 val total = if (size > 0) size else kind.approxMb.toLong() shl 20
                 setProgress(workDataOf(KEY_DONE to have, KEY_TOTAL to total))
-                IndexNotification.updateDownload(ctx, kind.ordinal, (have shr 20).toInt(), (total shr 20).toInt(),
-                    "%s · %,d of %,d MB".format(kind.title, have shr 20, total shr 20))
+                DownloadNotification.progress(ctx, kind, have, total)
             }
         } catch (e: IOException) {
             events.add("model_download", mapOf("model" to kind.name, "error" to "${e.javaClass.simpleName}: ${e.message}"))
             // Network trouble: try again later; the .part file keeps what arrived.
-            return@withContext if (runAttemptCount < MAX_ATTEMPTS) Result.retry()
-            else Result.failure(workDataOf(KEY_ERROR to "The download kept failing (${e.message ?: "network error"})."))
+            return@withContext if (runAttemptCount < MAX_ATTEMPTS) {
+                DownloadNotification.retrying(ctx, kind)
+                Result.retry()
+            } else {
+                val why = "The download kept failing (${e.message ?: "network error"})."
+                DownloadNotification.failed(ctx, kind, why)
+                Result.failure(workDataOf(KEY_ERROR to why))
+            }
         }
         if (!store.installDownloaded(kind, part)) {
             events.add("model_download", mapOf("model" to kind.name, "error" to "not the expected model"))
+            DownloadNotification.failed(ctx, kind, "The file that arrived wasn't the right model. Retry downloads it again.")
             return@withContext Result.failure(workDataOf(KEY_ERROR to "${kind.title} didn't download correctly."))
         }
         events.add("model_download", mapOf("model" to kind.name, "bytes" to store.sizeBytes(kind)))
-        if (store.autoDownload.all { store.has(it) }) AiWorker.enqueue(ctx, manual = false)
+        val allReady = store.autoDownload.all { store.has(it) }
+        DownloadNotification.finished(ctx, kind, store.sizeBytes(kind), allReady)
+        if (allReady) AiWorker.enqueue(ctx, manual = false)
         Result.success()
     }
 
     override suspend fun getForegroundInfo() =
-        IndexNotification.downloadInfo(applicationContext, kind?.ordinal ?: 0, 0, 0, "${kind?.title ?: "Model"} · starting")
+        DownloadNotification.foreground(applicationContext, kind ?: ModelKind.E5, 0, 0)
 
     companion object {
         const val KEY_KIND = "kind"
@@ -89,12 +97,20 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(ctx).enqueueUniqueWork(unique(kind), ExistingWorkPolicy.REPLACE, req)
+            prefs(ctx).edit().putBoolean(WIFI_ONLY, wifiOnly).apply()
+            // Can't start yet (no Wi-Fi, or offline): say so in the shade instead of waiting silently.
+            if (!DownloadNotification.networkOk(ctx, wifiOnly)) DownloadNotification.waiting(ctx, kind, wifiOnly)
+            else DownloadNotification.clearStatus(ctx, kind)
         }
+
+        private const val WIFI_ONLY = "wifi_only"
+        /** The Wi-Fi-only rule of the last Download tap, for Retry on the notification. */
+        fun wifiOnly(ctx: Context) = prefs(ctx).getBoolean(WIFI_ONLY, true)
 
         /** Pause: stops the job; the .part file stays for Resume. */
         fun pause(ctx: Context, kind: ModelKind) {
             WorkManager.getInstance(ctx).cancelUniqueWork(unique(kind))
-            IndexNotification.cancelDownload(ctx, kind.ordinal)
+            DownloadNotification.cancel(ctx, kind)
         }
 
         private fun prefs(ctx: Context) = ctx.getSharedPreferences("model_downloads", Context.MODE_PRIVATE)

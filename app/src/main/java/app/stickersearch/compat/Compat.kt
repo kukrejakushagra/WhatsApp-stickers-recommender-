@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import androidx.core.content.IntentCompat
 
 /** The few places where Android 9-16 differ, in one spot. */
@@ -23,12 +22,16 @@ object Compat {
         get() = if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.WEBP
 
     /**
-     * Whether the app may read WhatsApp's folders by path: "All files access" from Android 11,
-     * the storage permission on Android 9-10 (with legacy storage on 10).
+     * Whether the app may read WhatsApp's folders by path: only on Android 9-10, with the storage
+     * permission (and legacy storage on 10). From Android 11 the app reads them only through the
+     * folder the person picked; it doesn't ask for "All files access".
      */
-    fun canReadAllFiles(ctx: Context): Boolean =
-        if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
-        else ctx.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+    fun canReadByPath(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < 30 &&
+            ctx.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+
+    /** Android 9-10 can read WhatsApp's folders by path with the storage permission, as a fallback to the picker. */
+    val pathFallbackAvailable: Boolean get() = Build.VERSION.SDK_INT < 30
 
     fun streamOf(intent: Intent): Uri? = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
 

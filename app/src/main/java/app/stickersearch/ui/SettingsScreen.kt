@@ -139,19 +139,18 @@ internal fun SettingsScreen(state: UiState, actions: AppActions) {
                         else KdsButton("Pick folder", actions.pickBusinessFolder, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
                     },
                 )
-            }) else emptyList()) + listOf<@Composable () -> Unit>({
-                    // Android 11+ calls it "All files access"; on Android 9-10 it's the storage permission.
-                    val modern = android.os.Build.VERSION.SDK_INT >= 30
+            }) else emptyList()) + (if (app.stickersearch.compat.Compat.pathFallbackAvailable) listOf<@Composable () -> Unit>({
+                    // Android 9-10 only: the storage permission as a fallback. Android 11+ uses only the picked folder.
                     KdsSettingsRow(
-                        title = if (modern) "All files access" else "Storage permission", icon = R.drawable.ic_kds_shield,
+                        title = "Storage permission", icon = R.drawable.ic_kds_shield,
                         description = "Optional. Used only when the folder isn't picked.",
                         trailing = {
                             if (p.allFiles) KdsBadge("Granted", BadgeTone.SOFT)
-                            else KdsButton(if (modern) "Open settings" else "Allow", actions.openAllFiles, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
+                            else KdsButton("Allow", actions.openAllFiles, variant = ButtonVariant.OUTLINE, size = ButtonSize.SM)
                         },
                     )
                 },
-            ))
+            ) else emptyList()))
             if (pickedStickersOnly) {
                 KdsCallout("You picked WhatsApp Stickers only, so the stickers in Backup Excluded Stickers are missed. Pick Media instead.",
                     CalloutTone.WARNING, title = "One folder is missing")

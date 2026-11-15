@@ -53,7 +53,7 @@ class IndexWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
             add(saf)
             // All-files access only stands in when the folder picker isn't granted; using both would
             // list every sticker twice under different URIs.
-            if (!saf.probe.accessible && app.stickersearch.compat.Compat.canReadAllFiles(ctx)) add(FileSystemSource(ctx).scan())
+            if (!saf.probe.accessible && app.stickersearch.compat.Compat.canReadByPath(ctx)) add(FileSystemSource(ctx).scan())
             add(SharedInSource(File(ctx.filesDir, "imported")).scan())
         }
         val accessible = results.filter { it.probe.accessible }.map { it.probe.source.name }.toSet()

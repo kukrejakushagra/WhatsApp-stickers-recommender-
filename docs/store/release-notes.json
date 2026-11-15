@@ -34,5 +34,9 @@
   "52": {
     "en-GB": "• New navigation: a solid bar at the bottom, and a slim rail on the side in landscape, so nothing is hidden behind it\n• Phones in landscape show stickers and their details side by side\n• Help text opens as a small tooltip next to the label\n• Fixes a sticker card appearing over Settings on tablets",
     "hi-IN": "• नया नेविगेशन: नीचे एक ठोस बार, और लैंडस्केप में किनारे पर पतली रेल, ताकि उसके पीछे कुछ न छिपे\n• लैंडस्केप में फ़ोन पर स्टिकर और उनकी जानकारी साथ-साथ\n• मदद का टेक्स्ट अब लेबल के पास छोटे टूलटिप में खुलता है\n• टैबलेट पर सेटिंग्स के ऊपर स्टिकर कार्ड दिखने की समस्या ठीक"
+  },
+  "53": {
+    "en-GB": "• Model downloads show in the notification shade: which model, its progress, Pause, and its size when it's done\n• A notice when a download waits for Wi-Fi, with Retry if it fails\n• No longer asks for All files access: the folder you pick is all the app needs",
+    "hi-IN": "• मॉडल डाउनलोड अब नोटिफ़िकेशन में दिखते हैं: कौन-सा मॉडल, कितना हुआ, रोकने का बटन, और पूरा होने पर उसका साइज़\n• Wi-Fi का इंतज़ार हो तो सूचना, और विफल होने पर फिर से कोशिश का बटन\n• अब \"सभी फ़ाइलों की पहुँच\" नहीं माँगता: आपका चुना फ़ोल्डर ही काफ़ी है"
   }
 }

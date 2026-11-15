@@ -396,7 +396,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val held = tree != null && ctx.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }
         val business = prefs.getString(IndexWorker.KEY_TREE_BUSINESS, null)?.let(Uri::parse)
         val businessHeld = business != null && ctx.contentResolver.persistedUriPermissions.any { it.uri == business && it.isReadPermission }
-        return Permissions(tree, held, app.stickersearch.compat.Compat.canReadAllFiles(ctx), business, businessHeld,
+        return Permissions(tree, held, app.stickersearch.compat.Compat.canReadByPath(ctx), business, businessHeld,
             StickerPacks.installedApps(ctx), StickerPacks.target(ctx))
     }
 
@@ -1346,6 +1346,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun handleOpenIntent(intent: Intent?) {
         val target = intent?.getStringExtra(app.stickersearch.index.IndexNotification.EXTRA_OPEN) ?: return
         intent.removeExtra(app.stickersearch.index.IndexNotification.EXTRA_OPEN)
+        // Opening the "downloaded" notification counts as seeing it: the next one starts a fresh list.
+        if (target == app.stickersearch.index.IndexNotification.TARGET_MODELS) app.stickersearch.index.DownloadNotification.clearFinished(ctx)
         _state.update { it.copy(openSettingsAt = target) }
     }
 

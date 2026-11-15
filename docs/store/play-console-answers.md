@@ -94,11 +94,8 @@ Play asks for a short description and a video link (an unlisted YouTube screen r
 - **Data sync:** "Downloads the AI search models the user chose to download, with progress and Pause shown in a notification. Started only when the user taps Download."
 - **Media processing:** "Describes and indexes the user's stickers on the device so they can be searched. A long task the user starts, shown in a notification. Nothing leaves the device."
 
-### All files access (MANAGE_EXTERNAL_STORAGE): ⚠ action needed
-- Play allows this permission only for file managers, backup apps, antivirus apps and similar.
-- This app would very likely be **rejected**.
-- The app already works through the folder picker without it.
-- **Recommendation:** remove it from the Play build in the next release. Until then, choose the "remove the permission" path if Play asks.
+### All files access (MANAGE_EXTERNAL_STORAGE): removed
+- Removed in 1.2.3. If Play still shows the declaration because of an older build, answer that the permission isn't used any more; the form disappears once only 1.2.3+ builds are on the tracks.
 
 ### Ignore battery optimisations (REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
 - This is a restricted-use permission.

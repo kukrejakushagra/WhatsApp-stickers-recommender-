@@ -5,7 +5,7 @@ _Last updated: 13 November 2026 (version 1.1.0)_
 AI Sticker Search ("the app", package `app.stickersearch`) helps you find and send the WhatsApp stickers already on your phone. This policy explains what the app does with your information. In short: **your stickers, chats and descriptions stay on your phone. The app collects nothing and shares nothing. It uses the internet only to download its AI model files.**
 
 ## What the app reads
-- **Sticker files in WhatsApp's media folder** (and WhatsApp Business's, if you choose). You pick the folder yourself through Android's folder picker, or grant "All files access" on Android 11+ (the storage permission on Android 9–10). The app reads only the folders whose names contain "Sticker" and skips everything else, including WhatsApp's backups.
+- **Sticker files in WhatsApp's media folder** (and WhatsApp Business's, if you choose). You pick the folder yourself through Android's folder picker (on Android 9–10 you can grant the storage permission instead). The app reads only the folders whose names contain "Sticker" and skips everything else, including WhatsApp's backups.
 - **Images you choose to attach** (for example, chat screenshots for "Suggest stickers"), through Android's photo picker or the share menu. Only the images you pick are read.
 - **AI model files.** The app downloads its search models from Hugging Face (huggingface.co) when you agree to it during setup or in Settings. You can also download a model in your browser and import it.
 
@@ -28,7 +28,7 @@ Uninstalling the app removes all of this, including the downloaded models (backu
 
 ## Permissions
 - **Internet:** only to download the AI model files.
-- **Storage / All files access:** to read sticker files in WhatsApp's folders when you don't pick the folder directly.
+- **Storage (Android 9–10 only):** to read sticker files in WhatsApp's folders when you don't pick the folder directly. The app doesn't ask for "All files access".
 - **Notifications:** to show progress while indexing, describing, or exporting.
 - **Foreground service (data sync / media processing):** so long indexing and AI runs can finish in the background.
 - **Ignore battery optimisations:** optional, so overnight runs aren't stopped early.

@@ -58,12 +58,7 @@ Upload `app/build/outputs/bundle/release/app-release.aab`. Each upload needs a h
 Google reviews these by hand. Have a **short screen recording** ready for each (unlisted YouTube link).
 
 ### All files access (`MANAGE_EXTERNAL_STORAGE`)
-- **Core feature:** "Indexing and searching the user's WhatsApp sticker files stored in shared storage."
-- **Justification:**
-  > The app's core purpose is to search the sticker files WhatsApp keeps in shared storage (Android/media/com.whatsapp/…/WhatsApp Stickers). The app reads only sticker folders, never other files. The Storage Access Framework folder picker is offered first and works for most users. All files access is an optional fallback for devices where the picker can't grant the WhatsApp media folder. No user data leaves the device (the internet is used only to download the public AI model files).
-- **Risk:** Google often refuses all-files access when the folder picker suffices.
-  - If it's refused, the fix is to remove this permission from the Play build. The folder picker keeps working, and Android 9–10 use the storage permission.
-  - A sideload build can keep it.
+- **Not used since 1.2.3:** the permission was removed. Android 11+ reads stickers only through the folder the user picks; Android 9–10 can also use the ordinary storage permission. Nothing to declare.
 
 ### Ignore battery optimisations (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`)
 > Long-running on-device AI indexing (describing thousands of stickers overnight while charging) is stopped by battery optimisation. The user grants the exemption from Settings, and it's optional; the app works without it.

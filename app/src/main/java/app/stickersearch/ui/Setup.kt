@@ -124,16 +124,16 @@ private fun Folder(state: UiState, actions: AppActions) {
         },
     ))
     Spacer(Modifier.height(10.dp))
+    val pathFallback = app.stickersearch.compat.Compat.pathFallbackAvailable
     KdsInfo(
-        "Can't pick the folder?",
-        "Some phones hide WhatsApp's folder from the picker. Then allow ${if (android.os.Build.VERSION.SDK_INT >= 30) "All files access" else "storage access"} " +
-            "instead; the app still reads only sticker folders.",
+        "Can't find the folder?",
+        if (pathFallback) "Some phones hide WhatsApp's folder from the picker. Then allow storage access instead; the app still reads only sticker folders."
+        else "In the picker, tap ☰, then your phone's name › Android › media › com.whatsapp › WhatsApp › Media, and tap “Use this folder”.",
         style = Kds.type.caption, color = Kds.colors.mutedForeground, modifier = Modifier.padding(horizontal = 4.dp),
     )
-    if (!p.safHeld && !p.allFiles) {
+    if (pathFallback && !p.safHeld && !p.allFiles) {
         Spacer(Modifier.height(6.dp))
-        KdsButton(if (android.os.Build.VERSION.SDK_INT >= 30) "Allow all files access" else "Allow storage access",
-            actions.openAllFiles, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
+        KdsButton("Allow storage access", actions.openAllFiles, variant = ButtonVariant.GHOST, size = ButtonSize.SM)
     }
     Spacer(Modifier.height(32.dp))
     KdsButton("Continue", {

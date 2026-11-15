@@ -19,15 +19,15 @@ interface StickerSource {
 }
 
 /**
- * Option A: plain java.io.File walk. Needs "All files access" on Android 11+, or the storage
- * permission on Android 9-10 (see Compat.canReadAllFiles).
+ * Option A: plain java.io.File walk, Android 9-10 only, with the storage permission
+ * (see Compat.canReadByPath). From Android 11 the picked folder (SAF) is the only way in.
  */
 class FileSystemSource(private val context: Context) : StickerSource {
     override val id = SourceId.FILE_SYSTEM
 
     override suspend fun scan(): SourceResult {
-        if (!app.stickersearch.compat.Compat.canReadAllFiles(context)) {
-            return SourceResult(SourceProbe(id, false, "All files access not granted"), emptyList())
+        if (!app.stickersearch.compat.Compat.canReadByPath(context)) {
+            return SourceResult(SourceProbe(id, false, "Reading by path needs Android 9-10 and the storage permission"), emptyList())
         }
         val ext = Environment.getExternalStorageDirectory()
         val files = mutableListOf<DiscoveredFile>()

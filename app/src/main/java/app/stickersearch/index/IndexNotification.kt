@@ -27,6 +27,7 @@ object IndexNotification {
     /** Where a tap on the notification takes you (Settings, at the matching panel). */
     const val TARGET_STATUS = "status"
     const val TARGET_PC = "pc"
+    const val TARGET_MODELS = "models"
     const val EXTRA_OPEN = "open"
 
     private fun openApp(ctx: Context, target: String): android.app.PendingIntent {
@@ -73,26 +74,6 @@ object IndexNotification {
             android.os.Build.VERSION.SDK_INT >= 29 -> ForegroundInfo(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
             else -> ForegroundInfo(ID, n)
         }
-    }
-
-    /** Model downloads: one notification per model (so a scan can run beside them), always "data sync". */
-    const val DOWNLOAD_ID = 4210
-
-    fun downloadInfo(ctx: Context, slot: Int, done: Int, total: Int, text: String): ForegroundInfo {
-        val n = build(ctx, done, total, "Downloading search models", TARGET_STATUS, text)
-        return if (android.os.Build.VERSION.SDK_INT >= 29) ForegroundInfo(DOWNLOAD_ID + slot, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        else ForegroundInfo(DOWNLOAD_ID + slot, n)
-    }
-
-    fun updateDownload(ctx: Context, slot: Int, done: Int, total: Int, text: String) {
-        runCatching {
-            ctx.getSystemService(NotificationManager::class.java)
-                .notify(DOWNLOAD_ID + slot, build(ctx, done, total, "Downloading search models", TARGET_STATUS, text))
-        }
-    }
-
-    fun cancelDownload(ctx: Context, slot: Int) {
-        runCatching { ctx.getSystemService(NotificationManager::class.java).cancel(DOWNLOAD_ID + slot) }
     }
 
     fun update(ctx: Context, done: Int, total: Int, title: String = "Indexing stickers", target: String = TARGET_STATUS) {

@@ -2,7 +2,6 @@ package app.stickersearch.ui
 
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,7 +12,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.viewModels
-import androidx.core.net.toUri
 import app.stickersearch.ui.kds.theme.KdsTheme
 
 class MainActivity : ComponentActivity() {
@@ -45,12 +43,8 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     vm = vm,
                     openAllFilesSettings = {
-                        // Android 11+: the "All files access" settings page. Android 9-10: the storage permission.
-                        if (android.os.Build.VERSION.SDK_INT >= 30) {
-                            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, "package:$packageName".toUri()))
-                        } else {
-                            storagePermission.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-                        }
+                        // Android 9-10 only: the storage permission, a fallback to picking the folder.
+                        if (android.os.Build.VERSION.SDK_INT < 30) storagePermission.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
                     },
                 )
             }
